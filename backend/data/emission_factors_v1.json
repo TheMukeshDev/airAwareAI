@@ -1,0 +1,64 @@
+{
+  "version": "v1-dev",
+  "updated": "2026-11-18",
+  "status": "development",
+  "disclaimer": "Development factor set. Replace with documented national or regional factors before any public reporting.",
+  "units": {
+    "transport": "kg CO2e per passenger-km",
+    "electricity": "kg CO2e per kWh",
+    "lpg_cylinder": "kg CO2e per 14.2 kg cylinder",
+    "diet": "kg CO2e per person per month",
+    "waste": "kg CO2e per household per month",
+    "flight": "kg CO2e per economy flight (assumed 1200 km)"
+  },
+  "transport": {
+    "walk": { "factor": 0.0, "occupancy": 1, "label": "Walk" },
+    "cycle": { "factor": 0.0, "occupancy": 1, "label": "Cycle" },
+    "bus": { "factor": 0.041, "occupancy": 1, "label": "Bus" },
+    "metro": { "factor": 0.017, "occupancy": 1, "label": "Metro / train" },
+    "two_wheeler": { "factor": 0.043, "occupancy": 1, "label": "Motorcycle / scooter" },
+    "car_petrol": { "factor": 0.171, "occupancy": 1, "label": "Car (petrol)" },
+    "car_diesel": { "factor": 0.158, "occupancy": 1, "label": "Car (diesel)" },
+    "carpool": { "factor": 0.057, "occupancy": 3, "label": "Carpool" }
+  },
+  "electricity": {
+    "grid_factor": 0.71,
+    "label": "Indian grid average (development value)"
+  },
+  "cooking": {
+    "lpg_cylinder_kg": 42.46,
+    "png_monthly_kg": 25.0,
+    "electric_monthly_kg": 28.4,
+    "biomass_monthly_kg": 60.0,
+    "label": "Household cooking estimates"
+  },
+  "diet": {
+    "vegetarian": 65.0,
+    "mixed": 110.0,
+    "high_meat": 180.0
+  },
+  "waste": {
+    "base_monthly_kg": 9.0,
+    "segregates_waste": -2.0,
+    "composts": -3.0,
+    "avoids_single_use": -2.5
+  },
+  "flights": {
+    "kg_per_flight": 180.0,
+    "assumed_distance_km": 1200
+  },
+  "assumptions": [
+    "Development values only; not suitable for regulatory or verified carbon reporting.",
+    "Shared modes are attributed per passenger; occupancy is applied before comparison.",
+    "Cooking estimates are monthly per household, except LPG which scales with cylinders.",
+    "Diet and waste factors are broad placeholders while a documented national dataset is selected.",
+    "Avoided emissions compare a baseline journey with the alternative over the same distance and time period.",
+    "Opportunity estimates in the app use planning assumptions (e.g. 5% electricity reduction, 10% standby/cooling cut, 20% LPG stretch, 30% dietary shift factor) for guidance only; replace with documented factors before public reporting."
+  ],
+  "opportunity_defaults": {
+    "electricity_batch_reduction_pct": 0.05,
+    "electricity_standby_reduction_pct": 0.10,
+    "lpg_stretch_reduction_pct": 0.20,
+    "diet_shift_fraction": 0.30
+  }
+}
