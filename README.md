@@ -5,6 +5,12 @@ Environmental intelligence for Indian cities: live air quality, exposure-aware d
 Frontend: React 19 + Vite + Tailwind v4 + React Router 7 + Recharts + Leaflet
 Backend: Flask + Supabase Postgres + Open-Meteo + Gemini
 
+## Live deployment
+
+- App: https://airaware-ai-sigma.vercel.app
+- API health: https://airaware-ai-sigma.vercel.app/api/health
+- Vercel Services deploys the Vite frontend and Flask backend from this monorepo; `/api/*` routes to the backend and all other routes to the frontend.
+
 ## Demo
 
 > **Before submitting:** replace this block with an unlisted YouTube or Drive link that anyone with the link can view, plus a short written walkthrough. Do not fabricate a link.
@@ -71,7 +77,7 @@ Vite runs on `http://localhost:5173` and proxies `/api` to `http://127.0.0.1:500
 
 Required environment values:
 
-- `SUPABASE_DB_URL`: hosted Supabase Postgres connection URI (Dashboard → Connect), not the project URL.
+- `SUPABASE_DB_URL`: hosted Supabase Postgres connection URI (Dashboard → Connect), not the project URL. For serverless deployments, use the connection pooler URI with IPv4 egress; the direct `db.<ref>.supabase.co` endpoint may be IPv6-only and unreachable from Vercel.
 - `GEMINI_API_KEY`: Google AI Studio key for Gemini chat and plan summaries.
 - `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
 
