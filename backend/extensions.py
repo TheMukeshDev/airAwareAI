@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 jwt = JWTManager()
 
 
+def _client_ip():
+    for header in ("X-Real-IP", "X-Forwarded-For", "X-Vercel-Forwarded-For"):
+        value = request.headers.get(header, "")
+        for candidate in value.split(","):
+            candidate = candidate.strip()
+            if candidate:
+                return candidate
+    return request.remote_addr or "unknown"
+
+
 def _rate_limit_key():
     if not has_request_context():
         return "anonymous"
@@ -22,7 +32,7 @@ def _rate_limit_key():
         identity = None
     if identity:
         return f"user:{identity}"
-    return request.remote_addr or "unknown"
+    return f"ip:{_client_ip()}"
 
 
 limiter = Limiter(key_func=_rate_limit_key, default_limits=[])

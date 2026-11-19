@@ -9,7 +9,7 @@ import app as app_module
 import db as database
 from config import TestConfig
 from db import IntegrityConflict
-from extensions import limiter, token_denylist, users
+from extensions import _rate_limit_key, limiter, token_denylist, users
 
 
 @pytest.fixture()
@@ -126,3 +126,24 @@ def test_postgres_table_identifier_is_schema_qualified():
         == '"public"."airaware_documents"'
     )
     assert "sql.Identifier(TABLE)" not in Path(database.__file__).read_text()
+
+
+def test_rate_limit_key_uses_forwarded_client_ip(app):
+    with app.test_request_context(headers={"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}):
+        assert _rate_limit_key() == "ip:203.0.113.9"
+
+
+def test_register_limit_is_per_client_ip(client):
+    limiter.reset()
+    for index in range(4):
+        response = client.post(
+            "/api/auth/register",
+            headers={"X-Forwarded-For": f"203.0.113.{index + 1}"},
+            json={
+                "name": f"Signup {index}",
+                "email": f"signup-{index}@airaware.app",
+                "password": "testpass123",
+            },
+        )
+        assert response.status_code == 201
+    limiter.reset()

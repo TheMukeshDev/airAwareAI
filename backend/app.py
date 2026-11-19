@@ -38,7 +38,7 @@ BLUEPRINTS = (
 
 ROUTE_LIMITS = {
     "auth.login": "5/minute;20/hour",
-    "auth.register": "3/hour",
+    "auth.register": "10/minute;50/hour",
     "assistant.chat": "20/day",
     "air_quality.current": "60/minute",
     "air_quality.forecast": "60/minute",
