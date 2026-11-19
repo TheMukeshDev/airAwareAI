@@ -117,3 +117,12 @@ def test_login_is_rate_limited():
     assert statuses[:5] == [401] * 5
     assert statuses[5] == 429
     limiter.reset()
+
+
+def test_postgres_table_identifier_is_schema_qualified():
+    assert database.TABLE == "public.airaware_documents"
+    assert (
+        database.sql.Identifier(database.TABLE_SCHEMA, database.TABLE_NAME).as_string(None)
+        == '"public"."airaware_documents"'
+    )
+    assert "sql.Identifier(TABLE)" not in Path(database.__file__).read_text()

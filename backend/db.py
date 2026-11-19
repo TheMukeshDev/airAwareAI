@@ -42,7 +42,10 @@ COLLECTIONS = (
     "notifications",
 )
 
-TABLE = "public.airaware_documents"
+TABLE_SCHEMA = "public"
+TABLE_NAME = "airaware_documents"
+TABLE = f"{TABLE_SCHEMA}.{TABLE_NAME}"
+
 
 ALLOWED_QUERY_KEYS = {
     "_id",
@@ -580,7 +583,7 @@ def _fetch(name, query, sort=None, skip=0, limit=None, for_update=False):
     pool = _pool_or_raise()
     clause, params = _where(query)
     statement = sql.SQL("select id, data from {} where collection = %s and {}").format(
-        sql.Identifier(TABLE), sql.SQL(clause)
+        sql.Identifier(TABLE_SCHEMA, TABLE_NAME), sql.SQL(clause)
     )
     args = [name] + params
     order = _normalize_sort(sort)
@@ -613,7 +616,7 @@ def _count(name, query):
     pool = _pool_or_raise()
     clause, params = _where(query)
     statement = sql.SQL("select count(*) as total from {} where collection = %s and {}").format(
-        sql.Identifier(TABLE), sql.SQL(clause)
+        sql.Identifier(TABLE_SCHEMA, TABLE_NAME), sql.SQL(clause)
     )
     with pool.connection() as connection:
         row = connection.execute(statement, [name] + params).fetchone()
@@ -644,7 +647,7 @@ class PostgresCollection:
                     sql.SQL(
                         "insert into {} (id, collection, data) values (%s, %s, %s::jsonb) "
                         "on conflict (id) do update set data = excluded.data, updated_at = now()"
-                    ).format(sql.Identifier(TABLE)),
+                    ).format(sql.Identifier(TABLE_SCHEMA, TABLE_NAME)),
                     [prepared["_id"], self.name, payload],
                 )
 
@@ -679,7 +682,7 @@ class PostgresCollection:
             with pool.connection() as connection:
                 row = connection.execute(
                     sql.SQL("select id, data from {} where collection = %s and {} limit 1 for update").format(
-                        sql.Identifier(TABLE), sql.SQL(clause)
+                        sql.Identifier(TABLE_SCHEMA, TABLE_NAME), sql.SQL(clause)
                     ),
                     [self.name] + params,
                 ).fetchone()
@@ -689,7 +692,7 @@ class PostgresCollection:
                     _apply_update(document, update)
                     connection.execute(
                         sql.SQL("update {} set data = %s::jsonb, updated_at = now() where id = %s").format(
-                            sql.Identifier(TABLE)
+                            sql.Identifier(TABLE_SCHEMA, TABLE_NAME)
                         ),
                         [_json(document), row["id"]],
                     )
@@ -706,7 +709,7 @@ class PostgresCollection:
                 base["_id"] = str(base["_id"])
                 connection.execute(
                     sql.SQL("insert into {} (id, collection, data) values (%s, %s, %s::jsonb)").format(
-                        sql.Identifier(TABLE)
+                        sql.Identifier(TABLE_SCHEMA, TABLE_NAME)
                     ),
                     [base["_id"], self.name, _json(base)],
                 )
@@ -724,7 +727,7 @@ class PostgresCollection:
                 sql.SQL(
                     "delete from {0} where id = (select id from {0} "
                     "where collection = %s and {1} limit 1) returning id"
-                ).format(sql.Identifier(TABLE), sql.SQL(clause)),
+                ).format(sql.Identifier(TABLE_SCHEMA, TABLE_NAME), sql.SQL(clause)),
                 [self.name] + params,
             ).fetchone()
 
@@ -736,7 +739,7 @@ class PostgresCollection:
         with pool.connection() as connection:
             result = connection.execute(
                 sql.SQL("delete from {} where collection = %s and {}").format(
-                    sql.Identifier(TABLE), sql.SQL(clause)
+                    sql.Identifier(TABLE_SCHEMA, TABLE_NAME), sql.SQL(clause)
                 ),
                 [self.name] + params,
             )
@@ -750,7 +753,7 @@ class PostgresCollection:
         pool = _pool_or_raise()
         with pool.connection() as connection:
             connection.execute(
-                sql.SQL("delete from {} where collection = %s").format(sql.Identifier(TABLE)),
+                sql.SQL("delete from {} where collection = %s").format(sql.Identifier(TABLE_SCHEMA, TABLE_NAME)),
                 [self.name],
             )
 
