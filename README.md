@@ -80,6 +80,7 @@ Required environment values:
 - `SUPABASE_DB_URL`: hosted Supabase Postgres connection URI (Dashboard → Connect), not the project URL. For serverless deployments, use the connection pooler URI with IPv4 egress; the direct `db.<ref>.supabase.co` endpoint may be IPv6-only and unreachable from Vercel.
 - `GEMINI_API_KEY`: Google AI Studio key for Gemini chat and plan summaries.
 - `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+- `VITE_CARTO_API_KEY`: CARTO Basemaps API key for the station map tiles. It is embedded in the browser bundle, so restrict it to the deployed host in the CARTO dashboard.
 
 ## Tests and checks
 

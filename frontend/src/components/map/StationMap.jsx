@@ -5,7 +5,13 @@ import { classifyAqi } from "../../lib/aqi";
 import { formatNumber } from "../../lib/utils";
 import { DEFAULT_COORDS } from "../../lib/constants";
 
+const CARTO_API_KEY = import.meta.env.VITE_CARTO_API_KEY || "";
+const TILE_URL = CARTO_API_KEY
+  ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(CARTO_API_KEY)}`
+  : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+
 function Recenter({ center }) {
+
   const map = useMap();
   useEffect(() => {
     if (center?.latitude && center?.longitude) {
@@ -35,7 +41,8 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
         attributionControl
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url={TILE_URL}
+
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
           subdomains="abcd"
           maxZoom={19}
