@@ -24,10 +24,15 @@ def _resolve_location():
             value, problem = finite_number(fallback, name)
         return default if problem or value is None else value
 
-    latitude, longitude, _problem = clamp_location(
+    latitude, longitude, problem = clamp_location(
         number("latitude", location.get("latitude"), 25.4358),
         number("longitude", location.get("longitude"), 81.8463),
     )
+    if problem:
+        latitude, longitude, _fallback_problem = clamp_location(
+            location.get("latitude", 25.4358),
+            location.get("longitude", 81.8463),
+        )
 
     label = request.args.get("location") or location.get("city")
     if label and location.get("state") and not request.args.get("location"):

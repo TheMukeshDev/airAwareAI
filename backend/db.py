@@ -3,6 +3,7 @@
 import atexit
 import copy
 import json
+import logging
 import threading
 import time
 import uuid
@@ -10,6 +11,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 try:
     import psycopg
@@ -104,7 +107,7 @@ def _deserialize(value):
                 try:
                     parsed = datetime.fromisoformat(parsed.replace("Z", "+00:00"))
                 except ValueError:
-                    pass
+                    logger.debug("Value %r is not an ISO timestamp; keeping it as text", parsed)
             result[key] = parsed
         return result
     if isinstance(value, list):
@@ -140,13 +143,15 @@ def _expr_for_key(key):
     return None
 
 
+SQL_COMPARISON_OPERATORS = {"$gte": ">=", "$gt": ">", "$lte": "<=", "$lt": "<", "=": "="}
+
+
 def _comparison_clause(key, op, value, params):
+    operator = SQL_COMPARISON_OPERATORS[op]
     expr = _expr_for_key(key)
     if expr is not None:
-        operator = {"$gte": ">=", "$gt": ">", "$lte": "<=", "$lt": "<", "=": "="}[op]
         params.append(_sql_value(value))
         return f"{expr} {operator} %s"
-    operator = {"$gte": ">=", "$gt": ">", "$lte": "<=", "$lt": "<", "=": "="}[op]
     params.extend([_path(key), _json(value)])
     return f"(data #> %s::text[]) {operator} %s::jsonb"
 
@@ -160,88 +165,130 @@ def _equality_clause(key, expected, params):
     return "(data #> %s::text[]) = %s::jsonb"
 
 
+def _exists_clause(key, value, params):
+    expr = _expr_for_key(key)
+    suffix = "IS NOT NULL" if value else "IS NULL"
+    if expr is not None:
+        return f"{expr} {suffix}"
+    params.append(_path(key))
+    return f"(data #> %s::text[]) {suffix}"
+
+
+def _inequality_clause(key, op, value, params):
+    expr = _expr_for_key(key)
+    operator = "IS DISTINCT FROM" if op in {"$ne", "$nin"} else "="
+    if expr is not None:
+        params.append(_sql_value(value))
+        return f"{expr} {operator} %s"
+    params.extend([_path(key), _json(value)])
+    return f"(data #> %s::text[]) {operator} %s::jsonb"
+
+
+def _operator_clause(key, op, value, params):
+    builder = SQL_OPERATOR_BUILDERS[op]
+    return builder(key, value, params)
+
+
+def _in_clause(key, choices, params):
+    if not choices:
+        return "FALSE"
+    parts = [_equality_clause(key, item, params) for item in choices]
+    return "(" + " OR ".join(parts) + ")"
+
+
+def _nin_clause(key, choices, params):
+    clauses = [_inequality_clause(key, "$nin", item, params) for item in choices or ()]
+    return " AND ".join(clauses) if clauses else "TRUE"
+
+
+SQL_OPERATOR_BUILDERS = {
+    "$exists": lambda key, value, params: _exists_clause(key, value, params),
+    "$gt": lambda key, value, params: _comparison_clause(key, "$gt", value, params),
+    "$gte": lambda key, value, params: _comparison_clause(key, "$gte", value, params),
+    "$lt": lambda key, value, params: _comparison_clause(key, "$lt", value, params),
+    "$lte": lambda key, value, params: _comparison_clause(key, "$lte", value, params),
+    "$ne": lambda key, value, params: _inequality_clause(key, "$ne", value, params),
+    "$nin": lambda key, value, params: _nin_clause(key, value, params),
+    "$in": lambda key, value, params: _in_clause(key, value or [], params),
+}
+
+
 def _where(query):
     clauses = []
     params = []
     for key, expected in (query or {}).items():
         if not isinstance(key, str) or not key:
             continue
-        if key not in ALLOWED_QUERY_KEYS and key != "_id":
-            if not all(part.replace("_", "").isalnum() for part in key.split(".")):
-                raise ValueError("Unsupported query key")
-        if isinstance(expected, dict) and expected and all(str(op).startswith("$") for op in expected):
-            for op, value in expected.items():
-                if op == "$in":
-                    choices = value or []
-                    if not choices:
-                        clauses.append("FALSE")
-                        continue
-                    parts = []
-                    for item in choices:
-                        parts.append(_equality_clause(key, item, params))
-                    clauses.append("(" + " OR ".join(parts) + ")")
-                elif op == "$nin":
-                    for item in value or []:
-                        expr = _expr_for_key(key)
-                        if expr is not None:
-                            params.append(_sql_value(item))
-                            clauses.append(f"{expr} IS DISTINCT FROM %s")
-                        else:
-                            params.extend([_path(key), _json(item)])
-                            clauses.append("(data #> %s::text[]) IS DISTINCT FROM %s::jsonb")
-                elif op == "$ne":
-                    expr = _expr_for_key(key)
-                    if expr is not None:
-                        params.append(_sql_value(value))
-                        clauses.append(f"{expr} IS DISTINCT FROM %s")
-                    else:
-                        params.extend([_path(key), _json(value)])
-                        clauses.append("(data #> %s::text[]) IS DISTINCT FROM %s::jsonb")
-                elif op == "$exists":
-                    expr = _expr_for_key(key)
-                    if expr is not None:
-                        clauses.append(f"{expr} IS NOT NULL" if value else f"{expr} IS NULL")
-                    else:
-                        params.append(_path(key))
-                        clauses.append("(data #> %s::text[]) IS NOT NULL" if value else "(data #> %s::text[]) IS NULL")
-                elif op in {"$gte", "$gt", "$lte", "$lt"}:
-                    clauses.append(_comparison_clause(key, op, value, params))
-            continue
-        clauses.append(_equality_clause(key, expected, params))
+        if not _valid_query_key(key):
+            raise ValueError("Unsupported query key")
+        _append_where_clause(clauses, params, key, expected)
     return (" AND ".join(clauses), params) if clauses else ("TRUE", [])
 
 
+def _valid_query_key(key):
+    if key in ALLOWED_QUERY_KEYS or key == "_id":
+        return True
+    return all(part.replace("_", "").isalnum() for part in key.split("."))
+
+
+def _is_operator_expression(expected):
+    return (
+        isinstance(expected, dict)
+        and bool(expected)
+        and all(str(op).startswith("$") for op in expected)
+    )
+
+
+def _append_where_clause(clauses, params, key, expected):
+    if not _is_operator_expression(expected):
+        clauses.append(_equality_clause(key, expected, params))
+        return
+    for op, value in expected.items():
+        builder = SQL_OPERATOR_BUILDERS.get(op)
+        if builder is not None:
+            clauses.append(builder(key, value, params))
+
+
+def _nested_value(document, key):
+    current = document
+    for part in key.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None
+    return current
+
+
+def _memory_comparison(current, value, compare):
+    return current is not None and compare(current, value)
+
+
+MEMORY_OPERATOR_MATCHERS = {
+    "$in": lambda current, value: current in (value or []),
+    "$nin": lambda current, value: current not in (value or []),
+    "$ne": lambda current, value: current != value,
+    "$exists": lambda current, value: (current is not None) == bool(value),
+    "$gte": lambda current, value: _memory_comparison(current, value, lambda a, b: a >= b),
+    "$gt": lambda current, value: _memory_comparison(current, value, lambda a, b: a > b),
+    "$lte": lambda current, value: _memory_comparison(current, value, lambda a, b: a <= b),
+    "$lt": lambda current, value: _memory_comparison(current, value, lambda a, b: a < b),
+}
+
+
+def _memory_operator_matches(current, op, value):
+    matcher = MEMORY_OPERATOR_MATCHERS.get(op)
+    return matcher(current, value) if matcher is not None else True
+
+
+def _document_matches(document, key, expected):
+    current = _nested_value(document, key)
+    if not _is_operator_expression(expected):
+        return current == expected
+    return all(_memory_operator_matches(current, op, value) for op, value in expected.items())
+
+
 def _matches(document, query):
-    for key, expected in (query or {}).items():
-        current = document
-        for part in key.split("."):
-            if isinstance(current, dict) and part in current:
-                current = current[part]
-            else:
-                current = None
-                break
-        if isinstance(expected, dict) and expected and all(str(op).startswith("$") for op in expected):
-            for op, value in expected.items():
-                if op == "$in" and current not in (value or []):
-                    return False
-                if op == "$nin" and current in (value or []):
-                    return False
-                if op == "$ne" and current == value:
-                    return False
-                if op == "$exists" and ((current is not None) != bool(value)):
-                    return False
-                if op == "$gte" and (current is None or current < value):
-                    return False
-                if op == "$gt" and (current is None or current <= value):
-                    return False
-                if op == "$lte" and (current is None or current > value):
-                    return False
-                if op == "$lt" and (current is None or current >= value):
-                    return False
-            continue
-        if current != expected:
-            return False
-    return True
+    return all(_document_matches(document, key, expected) for key, expected in (query or {}).items())
 
 
 def _set_path(document, key, value):
@@ -416,7 +463,7 @@ def configure(config_object):
             try:
                 _pool.close()
             except Exception:
-                pass
+                logger.debug("Failed to close existing pool during reconfigure", exc_info=True)
         _pool = None
         _mode = None
         _runtime = {"backend": backend, "url": url}
@@ -430,38 +477,47 @@ def _connect_supabase_with_retry():
         return _mode
 
     with _connect_lock:
-        if _mode == "supabase" and _pool is not None:
-            return _mode
-        now = time.time()
-        if now < _connect_state.get("next_retry_at", 0.0):
-            raise StorageUnavailable("Supabase Postgres is temporarily unavailable. Please retry shortly.")
-        try:
-            pool = ConnectionPool(
+        return _connect_supabase_locked()
+
+
+def _connect_supabase_locked():
+    global _pool, _mode, _connect_state
+    if _mode == "supabase" and _pool is not None:
+        return _mode
+    if time.time() < _connect_state.get("next_retry_at", 0.0):
+        raise StorageUnavailable("Supabase Postgres is temporarily unavailable. Please retry shortly.")
+    try:
+        pool = ConnectionPool(
                 conninfo=_runtime["url"],
                 min_size=1,
                 max_size=5,
                 open=True,
                 timeout=5,
                 kwargs={"row_factory": dict_row, "prepare_threshold": None},
-            )
-            with pool.connection() as connection:
-                connection.execute("select 1")
-            _pool = pool
-            _mode = "supabase"
-            _connect_state = {"failures": 0, "next_retry_at": 0.0}
-            return _mode
-        except Exception as exc:
-            if _pool is not None:
-                try:
-                    _pool.close()
-                except Exception:
-                    pass
-            _pool = None
-            _mode = None
-            failures = min(int(_connect_state.get("failures", 0)) + 1, 6)
-            backoff = min(2 ** (failures - 1), 10)
-            _connect_state = {"failures": failures, "next_retry_at": time.time() + backoff}
-            raise StorageUnavailable("Supabase Postgres is temporarily unavailable. Please retry shortly.") from exc
+        )
+        with pool.connection() as connection:
+            connection.execute("select 1")
+        _pool = pool
+        _mode = "supabase"
+        _connect_state = {"failures": 0, "next_retry_at": 0.0}
+        return _mode
+    except Exception as exc:
+        _close_failed_pool()
+        raise StorageUnavailable("Supabase Postgres is temporarily unavailable. Please retry shortly.") from exc
+
+
+def _close_failed_pool():
+    global _pool, _mode, _connect_state
+    if _pool is not None:
+        try:
+            _pool.close()
+        except Exception:
+            logger.debug("Failed to close pool after connection failure", exc_info=True)
+    _pool = None
+    _mode = None
+    failures = min(int(_connect_state.get("failures", 0)) + 1, 6)
+    backoff = min(2 ** (failures - 1), 10)
+    _connect_state = {"failures": failures, "next_retry_at": time.time() + backoff}
 
 
 
@@ -485,7 +541,7 @@ def close():
             try:
                 _pool.close()
             except Exception:
-                pass
+                logger.debug("Failed to close pool during shutdown", exc_info=True)
         _pool = None
         _mode = None
 
@@ -619,28 +675,33 @@ def _fetch(name, query, sort=None, skip=0, limit=None, for_update=False):
     args = [name] + params
     order = _normalize_sort(sort)
     if order:
-        pieces = []
-        for key, direction in order:
-            direction_sql = sql.SQL("DESC" if direction < 0 else "ASC")
-            if _is_simple_allowed_key(key):
-                pieces.append(sql.SQL("data->>{} {}").format(sql.Literal(key), direction_sql))
-            elif key == "_id":
-                pieces.append(sql.SQL("id {}").format(direction_sql))
-            else:
-                pieces.append(sql.SQL("data #>> %s::text[] {}").format(direction_sql))
-                args.append(_path(key))
-        statement = statement + sql.SQL(" order by ") + sql.SQL(", ").join(pieces)
-    effective_limit = MAX_FETCH_LIMIT if limit is None else max(0, int(limit))
-    if effective_limit > MAX_FETCH_LIMIT:
-        effective_limit = MAX_FETCH_LIMIT
-    statement = statement + sql.SQL(" limit %s offset %s")
-    args.extend([effective_limit, max(0, int(skip or 0))])
+        statement, args = _append_fetch_sort(statement, args, order)
+    statement, args = _append_fetch_limit(statement, args, limit, skip)
     if for_update:
         statement = statement + sql.SQL(" for update")
     with pool.connection() as connection:
         rows = connection.execute(statement, args).fetchall()
-
     return [_deserialize(row["data"]) for row in rows]
+
+
+def _append_fetch_sort(statement, args, order):
+    pieces = []
+    for key, direction in order:
+        direction_sql = sql.SQL("DESC" if direction < 0 else "ASC")
+        if _is_simple_allowed_key(key):
+            pieces.append(sql.SQL("data->>{} {}").format(sql.Literal(key), direction_sql))
+        elif key == "_id":
+            pieces.append(sql.SQL("id {}").format(direction_sql))
+        else:
+            pieces.append(sql.SQL("data #>> %s::text[] {}").format(direction_sql))
+            args.append(_path(key))
+    return statement + sql.SQL(" order by ") + sql.SQL(", ").join(pieces), args
+
+
+def _append_fetch_limit(statement, args, limit, skip):
+    effective_limit = MAX_FETCH_LIMIT if limit is None else max(0, int(limit))
+    effective_limit = min(effective_limit, MAX_FETCH_LIMIT)
+    return statement + sql.SQL(" limit %s offset %s"), args + [effective_limit, max(0, int(skip or 0))]
 
 
 def _count(name, query):

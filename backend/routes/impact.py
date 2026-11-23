@@ -5,12 +5,35 @@ from flask import Blueprint, jsonify, request
 from extensions import find_user
 from services import impact_calculator
 from utils.http import error, pagination, require_auth
-from utils.validation import ensure_json_object
+from utils.validation import bounded_number, bounded_text, ensure_json_object, reject_unknown_keys
 
 impact_bp = Blueprint("impact", __name__)
 logger = logging.getLogger(__name__)
 
 PERIODS = {"7d": 7, "30d": 30, "90d": 90, "year": 365}
+ACTIVITY_FIELDS = frozenset({"distance_km", "passengers", "baseline_mode", "actual_mode", "date", "note"})
+ACTIVITY_NUMBERS = (("distance_km", 0, 0.01, 5000), ("passengers", 1, 1, 20))
+
+
+def _validate_activity_numbers(data):
+    for name, default, minimum, maximum in ACTIVITY_NUMBERS:
+        _, failure = bounded_number(data.get(name, default), name, minimum, maximum)
+        if failure:
+            return failure
+    return None
+
+
+def _validate_activity_payload(data):
+    failure = reject_unknown_keys(data, ACTIVITY_FIELDS, "impact activity")
+    if failure:
+        return failure
+    failure = _validate_activity_numbers(data)
+    if failure:
+        return failure
+    if "note" in data:
+        _, failure = bounded_text(data["note"], "note", 280, allow_empty=True)
+        return failure
+    return None
 
 
 @impact_bp.get("/impact/personal")
@@ -29,6 +52,9 @@ def personal(user_id):
 def log_activity(user_id):
     data = request.get_json(silent=True)
     data, failure = ensure_json_object(data)
+    if failure:
+        return failure
+    failure = _validate_activity_payload(data)
     if failure:
         return failure
     user = find_user(user_id)

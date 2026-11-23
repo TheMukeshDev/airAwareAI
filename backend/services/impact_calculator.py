@@ -100,30 +100,7 @@ def normalize_profile(payload):
 def log_journey(user_id, payload):
     if not user_id:
         raise ValueError("user_id is required")
-    mode_baseline = payload.get("baseline_mode")
-    mode_actual = payload.get("actual_mode")
-
-    try:
-        distance = float(payload.get("distance_km", 0))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("distance_km must be a number") from exc
-    if not math.isfinite(distance) or distance <= 0 or distance > MAX_DISTANCE_KM:
-        raise ValueError(f"distance_km must be greater than 0 and at most {MAX_DISTANCE_KM}")
-
-    raw_passengers = payload.get("passengers", 1)
-    if raw_passengers is None or raw_passengers == "":
-        raw_passengers = 1
-    try:
-        passengers = int(raw_passengers)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("passengers must be a number") from exc
-    if passengers < 1 or passengers > MAX_PASSENGERS:
-        raise ValueError(f"passengers must be between 1 and {MAX_PASSENGERS}")
-
-    if mode_baseline not in FACTORS["transport"]:
-        raise ValueError("Unknown baseline_mode")
-    if mode_actual not in FACTORS["transport"]:
-        raise ValueError("Unknown actual_mode")
+    distance, passengers, mode_baseline, mode_actual = _validate_journey(payload)
 
     record_date = validate_iso_date(payload.get("date") or datetime.now(UTC).date().isoformat())
 
@@ -150,6 +127,35 @@ def log_journey(user_id, payload):
     record["id"] = str(result.inserted_id)
     record.pop("_id", None)
     return record
+
+
+def _parse_passengers(raw):
+    try:
+        passengers = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("passengers must be a number") from exc
+    return passengers
+
+
+def _validate_journey(payload):
+    try:
+        distance = float(payload.get("distance_km", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("distance_km must be a number") from exc
+    if not math.isfinite(distance) or distance <= 0 or distance > MAX_DISTANCE_KM:
+        raise ValueError(f"distance_km must be greater than 0 and at most {MAX_DISTANCE_KM}")
+    raw_passengers = payload.get("passengers", 1)
+    raw_passengers = 1 if raw_passengers is None or raw_passengers == "" else raw_passengers
+    passengers = _parse_passengers(raw_passengers)
+    if passengers < 1 or passengers > MAX_PASSENGERS:
+        raise ValueError(f"passengers must be between 1 and {MAX_PASSENGERS}")
+    mode_baseline = payload.get("baseline_mode")
+    mode_actual = payload.get("actual_mode")
+    if mode_baseline not in FACTORS["transport"]:
+        raise ValueError("Unknown baseline_mode")
+    if mode_actual not in FACTORS["transport"]:
+        raise ValueError("Unknown actual_mode")
+    return distance, passengers, mode_baseline, mode_actual
 
 
 def _monthly_transport(transport):
@@ -222,26 +228,24 @@ def monthly_footprint(profile):
     }
 
 
-def _opportunities(transport, home, food, waste_flags, breakdown, household_size, mode, monthly_km):
-    items = []
+def _transport_opportunities(transport, mode):
     distance = _to_number(transport.get("commute_distance_km", 0), 0)
     days = _to_number(transport.get("commute_days_per_week", 0), 0)
-    base_factor = transport_factor(mode) or 0
+    if mode not in {"two_wheeler", "car_petrol", "car_diesel"} or distance <= 0 or days <= 0:
+        return []
+    alt = "metro" if distance >= 5 else "bus"
+    weekly_saving = max(0.0, ((transport_factor(mode) or 0) - (transport_factor(alt) or 0)) * distance * 2 * min(days, 3))
+    if weekly_saving <= 0.5:
+        return []
+    return [{"title": f"Swap {min(int(days), 3)} commute days to {MODE_LABELS.get(alt, alt).lower()}",
+             "detail": f"Keep your {MODE_LABELS.get(mode, mode).lower()} for the other days. Saving is per week for a {distance:g} km one-way commute.",
+             "saving_kg": round(weekly_saving * 4.33, 1),
+             "difficulty": "Moderate - needs route planning"}]
 
-    if mode in {"two_wheeler", "car_petrol", "car_diesel"} and distance > 0 and days > 0:
-        alt = "metro" if distance >= 5 else "bus"
-        alt_factor = transport_factor(alt) or 0
-        weekly_saving = max(0.0, (base_factor - alt_factor) * distance * 2 * min(days, 3))
-        if weekly_saving > 0.5:
-            items.append(
-                {
-                    "title": f"Swap {min(int(days), 3)} commute days to {MODE_LABELS.get(alt, alt).lower()}",
-                    "detail": f"Keep your {MODE_LABELS.get(mode, mode).lower()} for the other days. Saving is per week for a {distance:g} km one-way commute.",
-                    "saving_kg": round(weekly_saving * 4.33, 1),
-                    "difficulty": "Moderate - needs route planning",
-                }
-            )
 
+def _opportunities(transport, home, food, waste_flags, breakdown, household_size, mode, monthly_km):
+    items = []
+    items.extend(_transport_opportunities(transport, mode))
     electricity = _to_number(home.get("electricity_kwh_month", 0), 0)
     if electricity > 60:
         saving = electricity * 0.1 * FACTORS["electricity"]["grid_factor"] / household_size
@@ -292,6 +296,29 @@ def _opportunities(transport, home, food, waste_flags, breakdown, household_size
     return items[:5]
 
 
+def _weekly_buckets(records):
+    buckets = {}
+    for record in records:
+        try:
+            record_date = date.fromisoformat(record.get("date", ""))
+        except (TypeError, ValueError):
+            continue
+        key = (record_date - timedelta(days=record_date.weekday())).isoformat()
+        buckets[key] = buckets.get(key, 0) + (record.get("avoided_kg", 0) or 0)
+    return buckets
+
+
+def _achievements(records, avoided, modes):
+    thresholds = (
+        (bool(records), {"key": "first", "label": "First journey logged"}),
+        (avoided >= 10, {"key": "ten", "label": "10 kg CO2e avoided"}),
+        (avoided >= 50, {"key": "fifty", "label": "50 kg CO2e avoided"}),
+        (len(records) >= 5, {"key": "five", "label": "5 activities logged"}),
+        (modes.get("metro", 0) >= 20, {"key": "metro", "label": "Metro regular"}),
+    )
+    return [achievement for enabled, achievement in thresholds if enabled]
+
+
 def personal_summary(user_id, days=30):
     since_date = (datetime.now(UTC) - timedelta(days=days)).date().isoformat()
     today = datetime.now(UTC).date().isoformat()
@@ -307,16 +334,7 @@ def personal_summary(user_id, days=30):
     distance = round(sum(record.get("distance_km", 0) or 0 for record in records), 1)
     reduction = round((avoided / baseline) * 100, 1) if baseline else 0.0
 
-    weekly_buckets = {}
-    for record in records:
-        try:
-            record_date = date.fromisoformat(record.get("date", ""))
-        except (TypeError, ValueError):
-            continue
-
-        monday = record_date - timedelta(days=record_date.weekday())
-        key = monday.isoformat()
-        weekly_buckets[key] = weekly_buckets.get(key, 0) + (record.get("avoided_kg", 0) or 0)
+    weekly_buckets = _weekly_buckets(records)
 
     ordered_weeks = sorted(weekly_buckets.items())[-8:]
     weekly = [
@@ -333,17 +351,7 @@ def personal_summary(user_id, days=30):
         mode = record.get("actual_mode", "unknown")
         modes[mode] = modes.get(mode, 0) + (record.get("distance_km", 0) or 0)
 
-    achievements = []
-    if records:
-        achievements.append({"key": "first", "label": "First journey logged"})
-    if avoided >= 10:
-        achievements.append({"key": "ten", "label": "10 kg CO2e avoided"})
-    if avoided >= 50:
-        achievements.append({"key": "fifty", "label": "50 kg CO2e avoided"})
-    if len(records) >= 5:
-        achievements.append({"key": "five", "label": "5 activities logged"})
-    if modes.get("metro", 0) >= 20:
-        achievements.append({"key": "metro", "label": "Metro regular"})
+    achievements = _achievements(records, avoided, modes)
 
     return {
         "period_days": days,

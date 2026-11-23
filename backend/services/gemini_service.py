@@ -145,7 +145,7 @@ def _generate_json(prompt, schema_model):
                 http_options=types.HttpOptions(api_version="v1beta", timeout=timeout_ms),
             )
         except Exception:
-            pass
+            logger.debug("v1beta generation config unsupported; using default config", exc_info=True)
         response = client.models.generate_content(
             model=_runtime["model"],
             contents=prompt,
@@ -227,6 +227,32 @@ def _context_block(air, profile_summary=None, extra=None):
     return "\n".join(lines)
 
 
+def _chat_contents(types, history, context, message):
+    contents = []
+    for item in (history or [])[-6:]:
+        role = "user" if item.get("role") == "user" else "model"
+        contents.append(types.Content(role=role, parts=[types.Part(text=str(item.get("content", ""))[:2000])]))
+    user_prompt = f"<CONTEXT>\n{context}\n</CONTEXT>\n<USER_DATA>\nQuestion (JSON): {_json_data(message)}\n</USER_DATA>"
+    contents.append(types.Content(role="user", parts=[types.Part(text=user_prompt)]))
+    return contents
+
+
+def _chat_result(response, air):
+    text = (getattr(response, "text", "") or "").strip()
+    if not text:
+        raise GeminiUnavailable("Gemini returned an empty response. Please retry.")
+    try:
+        result = ChatResponse.model_validate(json.loads(text)).model_dump()
+    except Exception:
+        result = {"reply": text, "sources": [], "suggested_questions": []}
+    reply = (result.get("reply") or "").strip()
+    if not reply:
+        raise GeminiUnavailable("Gemini returned an empty response. Please retry.")
+    return {"reply": reply, "sources": result.get("sources") or _sources(air),
+            "suggested_questions": result.get("suggested_questions") or SUGGESTED_QUESTIONS,
+            "generated_by": "gemini"}
+
+
 def chat(message, air=None, history=None, profile_summary=None):
     client = _get_client()
     context = _context_block(air, profile_summary)
@@ -238,22 +264,10 @@ def chat(message, air=None, history=None, profile_summary=None):
     try:
         from google.genai import types
 
-        contents = []
-        for item in (history or [])[-6:]:
-            role = "user" if item.get("role") == "user" else "model"
-            contents.append(types.Content(role=role, parts=[types.Part(text=str(item.get("content", ""))[:2000])]))
-        user_prompt = (
-            f"<CONTEXT>\n{context}\n</CONTEXT>\n"
-            f"<USER_DATA>\nQuestion (JSON): {_json_data(message)}\n</USER_DATA>"
-        )
-        contents.append(types.Content(role="user", parts=[types.Part(text=user_prompt)]))
+        contents = _chat_contents(types, history, context, message)
         timeout_ms = int(_runtime["timeout"] * 1000)
-        gen_config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.5,
-            response_mime_type="application/json",
-            response_schema=ChatResponse,
-        )
+        gen_config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.5,
+                                                  response_mime_type="application/json", response_schema=ChatResponse)
         try:
             gen_config = types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
@@ -263,31 +277,13 @@ def chat(message, air=None, history=None, profile_summary=None):
                 http_options=types.HttpOptions(api_version="v1beta", timeout=timeout_ms),
             )
         except Exception:
-            pass
+            logger.debug("v1beta chat config unsupported; using default config", exc_info=True)
         response = client.models.generate_content(
             model=_runtime["model"],
             contents=contents,
             config=gen_config,
         )
-        text = (getattr(response, "text", "") or "").strip()
-        if not text:
-            raise GeminiUnavailable("Gemini returned an empty response. Please retry.")
-        try:
-            parsed = ChatResponse.model_validate(json.loads(text))
-            result = parsed.model_dump()
-        except Exception:
-            # Fallback: if model returned plain text despite schema request, wrap it safely
-            result = {"reply": text, "sources": [], "suggested_questions": []}
-
-        reply = (result.get("reply") or "").strip()
-        if not reply:
-            raise GeminiUnavailable("Gemini returned an empty response. Please retry.")
-        return {
-            "reply": reply,
-            "sources": result.get("sources") or _sources(air),
-            "suggested_questions": result.get("suggested_questions") or SUGGESTED_QUESTIONS,
-            "generated_by": "gemini",
-        }
+        return _chat_result(response, air)
     except GeminiUnavailable:
         raise
     except Exception as exc:

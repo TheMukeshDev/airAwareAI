@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Eye, EyeOff, LogIn } from "lucide-react";
@@ -89,6 +89,7 @@ export function Login() {
             onClick={() => setShowPassword((v) => !v)}
             className="absolute right-3 top-[30px] rounded-md p-1.5 text-slate-400 hover:text-slate-200"
             aria-label={showPassword ? "Hide password" : "Show password"}
+            aria-pressed={showPassword}
           >
             {showPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
           </button>

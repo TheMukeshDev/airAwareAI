@@ -7,7 +7,7 @@ from extensions import conversations, find_user
 from services import gemini_service
 from services.air_lookup import air_for_user
 from utils.http import error, now_utc, require_auth
-from utils.validation import ensure_json_object
+from utils.validation import bounded_text, ensure_json_object, reject_unknown_keys
 
 assistant_bp = Blueprint("assistant", __name__)
 logger = logging.getLogger(__name__)
@@ -42,23 +42,30 @@ def _conversation(user_id):
 @assistant_bp.post("/assistant/chat")
 @require_auth
 def chat(user_id):
-    data = request.get_json(silent=True)
-    data, failure = ensure_json_object(data)
+    message, failure = _chat_message()
     if failure:
         return failure
-    message = data.get("message")
-    if not isinstance(message, str):
-        return error("Type a question first.", 422)
-    message = message.strip()
-    if not message:
-        return error("Type a question first.", 422)
-    if len(message) > 800:
-        return error("Please keep questions under 800 characters.", 422)
-
     user = find_user(user_id)
     if not user:
         return error("Profile not found.", 404)
+    return _complete_chat(user_id, user, message)
 
+
+def _chat_message():
+    data = request.get_json(silent=True)
+    data, failure = ensure_json_object(data)
+    if failure:
+        return None, failure
+    failure = reject_unknown_keys(data, {"message"}, "assistant chat")
+    if failure:
+        return None, failure
+    message, failure = bounded_text(data.get("message"), "message", 2000, allow_empty=False)
+    if failure and not data.get("message"):
+        return None, error("Type a question first.", 422)
+    return message, failure
+
+
+def _complete_chat(user_id, user, message):
     air = air_for_user(user)
     try:
         conversation = _conversation(user_id)

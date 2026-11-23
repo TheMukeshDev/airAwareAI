@@ -153,19 +153,16 @@ def location_key(latitude, longitude):
 def _sub_index(pollutant, concentration):
     if concentration is None:
         return None
-    if pollutant == "carbon_monoxide":
-        concentration = concentration / 1000.0
+    concentration = concentration / 1000.0 if pollutant == "carbon_monoxide" else concentration
     table = CPCB_BREAKPOINTS.get(pollutant)
     if not table:
         return None
     c = float(concentration)
-    for c_low, i_low, c_high, i_high in table:
-        if c <= c_high:
-            if c_high == c_low:
-                return int(i_low)
-            return round(i_low + (i_high - i_low) * (c - c_low) / (c_high - c_low))
-    last = table[-1]
-    return int(last[3])
+    breakpoints = next(((low, ilow, high, ihigh) for low, ilow, high, ihigh in table if c <= high), table[-1])
+    c_low, i_low, c_high, i_high = breakpoints
+    if c_high == c_low:
+        return int(i_low)
+    return round(i_low + (i_high - i_low) * (c - c_low) / (c_high - c_low))
 
 
 def cpcb_aqi(pollutant_means):
@@ -201,31 +198,33 @@ def _trailing_mean(hourly, key, reference_time, hours=None):
     values = hourly.get(key) or []
     if len(times) != len(values):
         return None
-    if hours is None:
-        hours = POLLUTANT_WINDOWS_HOURS.get(key, 24)
-    reference = _parse_dt(reference_time)
-    indexed = []
-    for stamp, value in zip(times, values, strict=False):
-
-        if value is None:
-            continue
-        parsed = _parse_dt(stamp)
-        if parsed is None:
-            continue
-        indexed.append((parsed, float(value)))
+    hours = hours if hours is not None else POLLUTANT_WINDOWS_HOURS.get(key, 24)
+    indexed = _indexed_values(times, values)
     if not indexed:
         return None
-    if reference is not None:
-        window = [value for parsed, value in indexed if 0 <= (reference - parsed).total_seconds() < hours * 3600]
-        if len(window) < min(3, hours):
-            # allow inclusive boundary as fallback when exact-hour samples align
-            window = [value for parsed, value in indexed if 0 <= (reference - parsed).total_seconds() <= hours * 3600]
-    else:
-        window = [value for _, value in indexed[-hours:]]
+    window = _trailing_window(indexed, _parse_dt(reference_time), hours)
     if len(window) < min(3, hours):
-        # Not enough samples in averaging window
         return None
     return round(sum(window) / len(window), 2)
+
+
+def _indexed_values(times, values):
+    indexed = []
+    for stamp, value in zip(times, values, strict=False):
+        parsed = _parse_dt(stamp)
+        if value is not None and parsed is not None:
+            indexed.append((parsed, float(value)))
+    return indexed
+
+
+def _trailing_window(indexed, reference, hours):
+    if reference is None:
+        return [value for _, value in indexed[-hours:]]
+    seconds = hours * 3600
+    window = [value for parsed, value in indexed if 0 <= (reference - parsed).total_seconds() < seconds]
+    if len(window) >= min(3, hours):
+        return window
+    return [value for parsed, value in indexed if 0 <= (reference - parsed).total_seconds() <= seconds]
 
 
 def _safe(value):
@@ -274,31 +273,37 @@ def _weather_payload(weather):
     }
 
 
+def _window_slot_is_future(start, observed, hours_ahead):
+    if observed is None:
+        return True
+    delta_h = (start - observed).total_seconds() / 3600.0
+    return 0 <= delta_h <= hours_ahead
+
+
+def _best_window_slot(times, values, observed, hours_ahead):
+    best = None
+    for index in range(len(times) - 1):
+        pair = values[index:index + 2]
+        if len(pair) < 2 or any(value is None for value in pair):
+            continue
+        start = _parse_dt(times[index])
+        if start is None:
+            continue
+        if not _window_slot_is_future(start, observed, hours_ahead):
+            continue
+        mean = sum(float(value) for value in pair) / 2
+        if best is None or mean < best[0]:
+            best = (mean, start, index)
+    return best
+
+
 def _best_ventilation_window(hourly, observed_at=None, tz_name=None, hours_ahead=48):
     if not hourly or not hourly.get("time"):
         return None
     times = hourly["time"]
     values = hourly.get("pm2_5") or []
     observed = _parse_dt(observed_at)
-    best = None
-    for index in range(len(times) - 1):
-        pair = values[index : index + 2]
-        if len(pair) < 2 or any(value is None for value in pair):
-            continue
-        try:
-            start = _parse_dt(times[index])
-        except Exception:
-            start = None
-        if start is None:
-            continue
-        if observed is not None:
-            # consider future slots only (within next hours_ahead)
-            delta_h = (start - observed).total_seconds() / 3600.0
-            if delta_h < 0 or delta_h > hours_ahead:
-                continue
-        mean = sum(float(v) for v in pair) / 2
-        if best is None or mean < best[0]:
-            best = (mean, start, index)
+    best = _best_window_slot(times, values, observed, hours_ahead)
     if not best:
         return None
     mean, start, index = best
@@ -378,19 +383,24 @@ def _weather_fetch_with_cache(latitude, longitude):
         return payload or {}, bool(payload)
 
 
-def _build_current_payload(data, weather, stale, hit, key, latitude, longitude, location_label=None, city=None, state=None):
-    current = data.get("current") or {}
-    hourly = data.get("hourly") or {}
-    observed_at = current.get("time")
-    pollutants = {key_name: _safe(current.get(key_name)) for key_name in POLLUTANT_UNITS}
+def _current_pollutant_means(hourly, observed_at):
     means = {}
-    means_basis = {}
+    basis = {}
     for pollutant in ("pm2_5", "pm10", "nitrogen_dioxide", "sulphur_dioxide", "ozone", "carbon_monoxide"):
         hours = POLLUTANT_WINDOWS_HOURS.get(pollutant, 24)
         mean = _trailing_mean(hourly, pollutant, observed_at, hours)
         if mean is not None:
             means[pollutant] = mean
-            means_basis[pollutant] = {"mean": mean, "window_hours": hours}
+            basis[pollutant] = {"mean": mean, "window_hours": hours}
+    return means, basis
+
+
+def _build_current_payload(data, weather, stale, hit, key, latitude, longitude, location_label=None, city=None, state=None):
+    current = data.get("current") or {}
+    hourly = data.get("hourly") or {}
+    observed_at = current.get("time")
+    pollutants = {key_name: _safe(current.get(key_name)) for key_name in POLLUTANT_UNITS}
+    means, means_basis = _current_pollutant_means(hourly, observed_at)
     india_aqi, primary_pollutant, sub_indices = cpcb_aqi(means)
 
     us_aqi = current.get("us_aqi")
@@ -456,6 +466,20 @@ def get_current(latitude, longitude, location_label=None, city=None, state=None)
     return _build_current_payload(data, weather, stale, hit, key, latitude, longitude, location_label, city, state)
 
 
+def _rolling_values(values, index, end, parsed_times, hours):
+    collected = []
+    for j in range(index, -1, -1):
+        stamp = parsed_times[j]
+        if stamp is None or j >= len(values) or values[j] is None:
+            continue
+        delta_h = (end - stamp).total_seconds() / 3600.0
+        if 0 <= delta_h <= hours:
+            collected.append(float(values[j]))
+        elif delta_h > hours:
+            break
+    return collected
+
+
 def _rolling_mean_at(hourly, pollutant, index, times, parsed_times, hours):
     values = hourly.get(pollutant) or []
     if index >= len(parsed_times):
@@ -463,19 +487,77 @@ def _rolling_mean_at(hourly, pollutant, index, times, parsed_times, hours):
     end = parsed_times[index]
     if end is None:
         return None
-    collected = []
-    for j in range(index, -1, -1):
-        t = parsed_times[j]
-        if t is None or j >= len(values) or values[j] is None:
-            continue
-        delta_h = (end - t).total_seconds() / 3600.0
-        if 0 <= delta_h <= hours:
-            collected.append(float(values[j]))
-        elif delta_h > hours:
-            break
+    collected = _rolling_values(values, index, end, parsed_times, hours)
     if len(collected) < min(3, hours):
         return None
     return round(sum(collected) / len(collected), 2)
+
+
+def _forecast_entry(hourly_raw, index, stamp, times, parsed_times):
+    entry = {"time": stamp}
+    for field in ("pm2_5", "pm10", "nitrogen_dioxide", "ozone", "us_aqi"):
+        values = hourly_raw.get(field) or []
+        entry[field] = values[index] if index < len(values) else None
+    try:
+        entry["us_aqi"] = int(round(float(entry["us_aqi"]))) if entry["us_aqi"] is not None else None
+    except (TypeError, ValueError):
+        entry["us_aqi"] = None
+    means, means_basis = _forecast_means(hourly_raw, index, times, parsed_times)
+    if means:
+        india_aqi, primary, _sub = cpcb_aqi(means)
+        entry.update(india_aqi=india_aqi, india_aqi_primary=primary,
+                     india_aqi_basis="rolling_mean", aqi_averaging_basis=means_basis)
+    else:
+        sub = cpcb_aqi({field: entry.get(field) for field in ("pm2_5", "pm10", "nitrogen_dioxide", "ozone")})
+        entry.update(india_aqi=sub[0], india_aqi_primary=sub[1],
+                     india_aqi_basis="hourly_indicative_estimate", aqi_averaging_basis={},
+                     india_aqi_note="Hourly indicative estimate, not a CPCB 24h/8h AQI.")
+    return entry
+
+
+def _forecast_means(hourly_raw, index, times, parsed_times):
+    means = {}
+    basis = {}
+    for pollutant in ("pm2_5", "pm10", "nitrogen_dioxide", "sulphur_dioxide", "ozone", "carbon_monoxide"):
+        window_h = POLLUTANT_WINDOWS_HOURS.get(pollutant, 24)
+        mean = _rolling_mean_at(hourly_raw, pollutant, index, times, parsed_times, window_h)
+        if mean is not None:
+            means[pollutant] = mean
+            basis[pollutant] = {"mean": mean, "window_hours": window_h}
+    return means, basis
+
+
+def _forecast_series(hourly_raw, times, parsed_times, observed, hours):
+    series = []
+    for index, stamp in enumerate(times):
+        entry = _forecast_entry(hourly_raw, index, stamp, times, parsed_times)
+        if entry is not None and (observed is None or parsed_times[index] >= observed):
+            series.append(entry)
+        if len(series) >= hours:
+            break
+    return series
+
+
+def _forecast_daily(series):
+    daily = {}
+    for entry in series:
+        date_key = entry["time"][:10]
+        bucket = daily.setdefault(date_key, {"date": date_key, "us_aqi_max": None,
+                                             "india_aqi_max": None, "pm2_5": []})
+        bucket["us_aqi_max"] = _max_bucket_value(bucket["us_aqi_max"], entry.get("us_aqi"))
+        bucket["india_aqi_max"] = _max_bucket_value(bucket["india_aqi_max"], entry.get("india_aqi"))
+        if entry.get("pm2_5") is not None:
+            bucket["pm2_5"].append(entry["pm2_5"])
+    daily_list = []
+    for bucket in daily.values():
+        pm_values = bucket.pop("pm2_5")
+        bucket["pm2_5_mean"] = round(sum(pm_values) / len(pm_values), 1) if pm_values else None
+        daily_list.append(bucket)
+    return daily_list
+
+
+def _max_bucket_value(current, value):
+    return max(current or 0, value) if value is not None else current
 
 
 def get_forecast(latitude, longitude, hours=48):
@@ -485,75 +567,8 @@ def get_forecast(latitude, longitude, hours=48):
     parsed_times = [_parse_dt(t) for t in times]
     observed = _parse_dt((data.get("current") or {}).get("time"))
 
-    series = []
-    for index, stamp in enumerate(times):
-        parsed = parsed_times[index]
-        if parsed is None:
-            continue
-        if observed is not None and parsed < observed:
-            continue
-        entry = {"time": stamp}
-        for field in ("pm2_5", "pm10", "nitrogen_dioxide", "ozone", "us_aqi"):
-            values = hourly_raw.get(field) or []
-            entry[field] = values[index] if index < len(values) else None
-        try:
-            entry["us_aqi"] = int(round(float(entry["us_aqi"]))) if entry["us_aqi"] is not None else None
-        except (TypeError, ValueError):
-            entry["us_aqi"] = None
-
-        means = {}
-        means_basis = {}
-        for pollutant in ("pm2_5", "pm10", "nitrogen_dioxide", "sulphur_dioxide", "ozone", "carbon_monoxide"):
-            window_h = POLLUTANT_WINDOWS_HOURS.get(pollutant, 24)
-            mean = _rolling_mean_at(hourly_raw, pollutant, index, times, parsed_times, window_h)
-            if mean is not None:
-                means[pollutant] = mean
-                means_basis[pollutant] = {"mean": mean, "window_hours": window_h}
-        if means:
-            india_aqi, primary, sub = cpcb_aqi(means)
-            entry["india_aqi"] = india_aqi
-            entry["india_aqi_primary"] = primary
-            entry["india_aqi_basis"] = "rolling_mean"
-            entry["aqi_averaging_basis"] = means_basis
-        else:
-            # Fall back to single hourly values as indicative estimate
-            sub = cpcb_aqi(
-                {
-                    "pm2_5": entry.get("pm2_5"),
-                    "pm10": entry.get("pm10"),
-                    "nitrogen_dioxide": entry.get("nitrogen_dioxide"),
-                    "ozone": entry.get("ozone"),
-                }
-            )
-            entry["india_aqi"] = sub[0]
-            entry["india_aqi_primary"] = sub[1]
-            entry["india_aqi_basis"] = "hourly_indicative_estimate"
-            entry["aqi_averaging_basis"] = {}
-            entry["india_aqi_note"] = "Hourly indicative estimate, not a CPCB 24h/8h AQI."
-
-        series.append(entry)
-        if len(series) >= hours:
-            break
-
-    daily = {}
-    for entry in series:
-        date_key = entry["time"][:10]
-        bucket = daily.setdefault(date_key, {"date": date_key, "us_aqi_max": None, "india_aqi_max": None, "pm2_5": []})
-        if entry.get("us_aqi") is not None:
-            bucket["us_aqi_max"] = max(bucket["us_aqi_max"] or 0, entry["us_aqi"])
-        if entry.get("india_aqi") is not None:
-            bucket["india_aqi_max"] = max(bucket["india_aqi_max"] or 0, entry["india_aqi"])
-        if entry.get("pm2_5") is not None:
-            try:
-                bucket["pm2_5"].append(float(entry["pm2_5"]))
-            except (TypeError, ValueError):
-                pass
-
-    daily_list = []
-    for bucket in daily.values():
-        pm_values = bucket.pop("pm2_5")
-        bucket["pm2_5_mean"] = round(sum(pm_values) / len(pm_values), 1) if pm_values else None
-        daily_list.append(bucket)
+    series = _forecast_series(hourly_raw, times, parsed_times, observed, hours)
+    daily_list = _forecast_daily(series)
 
     location = {
         "latitude": data.get("latitude", latitude),

@@ -4,7 +4,7 @@ import { cn, formatNumber, relativeTime } from "../../lib/utils";
 import { Badge } from "../common/Badge";
 import { Button } from "../common/Button";
 
-function Gauge({ value, tone }) {
+function AqiGauge({ value, tone, categoryLabel, scaleLabel }) {
   const max = 300;
   const pct = Math.min(1, Math.max(0, (Number(value) || 0) / max));
   const radius = 78;
@@ -12,8 +12,9 @@ function Gauge({ value, tone }) {
   const offset = circumference * (1 - pct);
   const isEmpty = value === null || value === undefined || Number.isNaN(Number(value));
   return (
-    <div className="relative h-[112px] w-[188px]">
-      <svg viewBox="0 0 188 108" className="h-full w-full" aria-hidden="true">
+    <figure role="img" aria-label={`AQI gauge: ${isEmpty ? "unavailable" : Math.round(Number(value))}`}>
+      <div className="relative h-[112px] w-[188px]">
+        <svg viewBox="0 0 188 108" className="h-full w-full" aria-hidden="true">
         <defs>
           <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="#34d399" />
@@ -43,13 +44,19 @@ function Gauge({ value, tone }) {
             strokeWidth="3"
           />
         ) : null}
-      </svg>
-      <div className="absolute inset-x-0 bottom-2 text-center">
-        <span className="font-display text-[34px] font-semibold leading-none tabular-nums text-white">
-          {isEmpty ? "—" : Math.round(Number(value))}
-        </span>
+        </svg>
+        <div className="absolute inset-x-0 bottom-2 text-center">
+          <span className="font-display text-[34px] font-semibold leading-none tabular-nums text-white">
+            {isEmpty ? "—" : Math.round(Number(value))}
+          </span>
+        </div>
       </div>
-    </div>
+      <figcaption className="sr-only">
+        {isEmpty
+          ? "No AQI reading is available for this location."
+          : `Current AQI ${Math.round(Number(value))} on the ${scaleLabel} scale, category ${categoryLabel || "unclassified"}.`}
+      </figcaption>
+    </figure>
   );
 }
 
@@ -97,7 +104,12 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
           </div>
         ) : (
           <>
-            <Gauge value={reading?.aqi} tone={category} />
+            <AqiGauge
+              value={reading?.aqi}
+              tone={category}
+              categoryLabel={category.label}
+              scaleLabel={scale === "india" ? "Indian CPCB AQI" : "US AQI"}
+            />
             <div className="-mt-1 flex flex-col items-center gap-2">
               <span className={cn("text-[15px] font-semibold", category.style.text)}>
                 {reading ? category.label : loading ? "Loading…" : "Unavailable"}

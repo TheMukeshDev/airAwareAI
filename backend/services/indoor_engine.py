@@ -40,99 +40,114 @@ BASE_RECOMMENDATIONS = [
 ]
 
 
-def assess(payload, air=None):
-    answers = payload.get("answers") if isinstance(payload, dict) and isinstance(payload.get("answers"), dict) else (payload or {})
-    outdoor_aqi = None
-    if air:
-        outdoor_aqi = air.get("aqi")
-    elif answers.get("outdoor_aqi") is not None:
-        try:
-            outdoor_aqi = int(answers.get("outdoor_aqi"))
-        except (TypeError, ValueError):
-            outdoor_aqi = None
+def _flag(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"yes", "true", "1", "often", "always"}
+    return bool(value) if value is not None else False
 
+
+def _outdoor_aqi(answers, air):
+    if air:
+        return air.get("aqi")
+    try:
+        return int(answers.get("outdoor_aqi")) if answers.get("outdoor_aqi") is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _indoor_score(answers, outdoor_aqi):
     score = 62
     reasons = []
     fixes = []
+    score, reasons, fixes = _score_positive_items(score, reasons, fixes, answers)
+    score, reasons, fixes = _score_negative_items(score, reasons, fixes, answers)
+    score, fixes = _score_missing_habits(score, fixes, answers)
+    score, fixes = _score_outdoor_exposure(score, fixes, answers, outdoor_aqi)
+    return max(10, min(95, int(round(score)))), reasons, fixes
 
-    def flag(value):
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return False
-        if isinstance(value, str):
-            return value.strip().lower() in {"yes", "true", "1", "often", "always"}
-        return bool(value)
 
-    if flag(answers.get("ventilates_daily")):
-        score += 10
-        reasons.append("Daily ventilation")
-    else:
+def _apply_positive(score, reasons, enabled, amount, text):
+    if enabled:
+        return score + amount, reasons + [text]
+    return score, reasons
+
+
+def _apply_negative(score, fixes, enabled, amount, text):
+    if enabled:
+        return score + amount, fixes + [text]
+    return score, fixes
+
+
+def _score_positive_items(score, reasons, fixes, answers):
+    positive = (
+        ("ventilates_daily", 10, "Daily ventilation"),
+        ("cooking_exhaust", 8, "Cooking exhaust in use"),
+        ("purifier", 8, "Filtration running"),
+        ("air_tight_home", 5, "Home generally sealed"),
+    )
+    for key, amount, text in positive:
+        score, reasons = _apply_positive(score, reasons, _flag(answers.get(key)), amount, text)
+    if not _flag(answers.get("damp_or_mould")):
+        score, reasons = score + 6, reasons + ["No visible damp reported"]
+    if not _flag(answers.get("smoking_indoor")):
+        score += 5
+    return score, reasons, fixes
+
+
+def _score_negative_items(score, reasons, fixes, answers):
+    negative = (
+        ("damp_or_mould", -14, "Treat damp patches and mould, then keep the room dry and ventilated."),
+        ("smoking_indoor", -20, "Make the home smoke-free indoors; open windows do not remove third-hand smoke residue."),
+        ("incense_or_coils", -6, "Replace incense sticks and mosquito coils with alternatives that do not create fine particles."),
+        ("pets", -4, "Vacuum pet hair with a HEPA filter at least twice a week."),
+        ("road_facing", -5, "Keep road-facing windows closed during peak traffic hours."),
+    )
+    for key, amount, text in negative:
+        score, fixes = _apply_negative(score, fixes, _flag(answers.get(key)), amount, text)
+    return score, reasons, fixes
+
+
+def _score_missing_habits(score, fixes, answers):
+    if not _flag(answers.get("ventilates_daily")):
         score -= 8
-        fixes.append("Start a 15-minute cross-ventilation routine, ideally in the cleanest part of the day.")
-
-    if flag(answers.get("cooking_exhaust")):
-        score += 8
-        reasons.append("Cooking exhaust in use")
-    else:
+        fixes.insert(0, "Start a 15-minute cross-ventilation routine, ideally in the cleanest part of the day.")
+    if not _flag(answers.get("cooking_exhaust")):
         score -= 10
         fixes.append("Use a chimney or exhaust fan every time you cook with gas or fry food.")
+    return score, fixes
 
-    if flag(answers.get("damp_or_mould")):
-        score -= 14
-        fixes.append("Treat damp patches and mould, then keep the room dry and ventilated.")
-    else:
-        score += 6
-        reasons.append("No visible damp reported")
 
-    if flag(answers.get("smoking_indoor")):
-        score -= 20
-        fixes.append("Make the home smoke-free indoors; open windows do not remove third-hand smoke residue.")
-    else:
-        score += 5
-
-    if flag(answers.get("purifier")):
-        score += 8
-        reasons.append("Filtration running")
-    elif outdoor_aqi is not None and outdoor_aqi > 150:
+def _score_outdoor_exposure(score, fixes, answers, outdoor_aqi):
+    if not _flag(answers.get("purifier")) and outdoor_aqi is not None and outdoor_aqi > 150:
         score -= 8
         fixes.append("High outdoor pollution and no filtration: consider a HEPA purifier for the main room.")
+    try:
+        hours = float(answers.get("hours_home_outdoors"))
+        if hours > 4 and outdoor_aqi is not None and outdoor_aqi > 150:
+            score -= 4
+            fixes.append("Limit outdoor hours on high-pollution days and shift them to the cleanest window.")
+    except (TypeError, ValueError):
+        logger.debug("Ignoring non-numeric hours_home_outdoors value")
+    return score, fixes
 
-    if flag(answers.get("incense_or_coils")):
-        score -= 6
-        fixes.append("Replace incense sticks and mosquito coils with alternatives that do not create fine particles.")
 
-    if flag(answers.get("pets")):
-        score -= 4
-        fixes.append("Vacuum pet hair with a HEPA filter at least twice a week.")
+def _score_band(score):
+    bands = (
+        (80, "good", "Your indoor air routine looks strong. Keep the habits going."),
+        (60, "fair", "Solid base. A few consistent fixes would meaningfully lower indoor exposure."),
+        (40, "needs_attention", "Several sources are adding to indoor pollution. Start with the two highest-impact fixes."),
+    )
+    return next(((label, summary) for limit, label, summary in bands if score >= limit),
+                ("poor", "Indoor air is likely poor. Ventilation, exhaust and source control need attention now."))
 
-    if flag(answers.get("road_facing")):
-        score -= 5
-        fixes.append("Keep road-facing windows closed during peak traffic hours.")
 
-    if flag(answers.get("air_tight_home")):
-        score += 5
-        reasons.append("Home generally sealed")
-
-    if answers.get("hours_home_outdoors") is not None:
-        try:
-            hours = float(answers.get("hours_home_outdoors"))
-            if hours > 4 and outdoor_aqi and outdoor_aqi > 150:
-                score -= 4
-                fixes.append("Limit outdoor hours on high-pollution days and shift them to the cleanest window.")
-        except (TypeError, ValueError):
-            pass
-
-    score = max(10, min(95, int(round(score))))
-    if score >= 80:
-        label, summary = "good", "Your indoor air routine looks strong. Keep the habits going."
-    elif score >= 60:
-        label, summary = "fair", "Solid base. A few consistent fixes would meaningfully lower indoor exposure."
-    elif score >= 40:
-        label, summary = "needs_attention", "Several sources are adding to indoor pollution. Start with the two highest-impact fixes."
-    else:
-        label, summary = "poor", "Indoor air is likely poor. Ventilation, exhaust and source control need attention now."
-
+def assess(payload, air=None):
+    answers = payload.get("answers") if isinstance(payload, dict) and isinstance(payload.get("answers"), dict) else (payload or {})
+    outdoor_aqi = _outdoor_aqi(answers, air)
+    score, reasons, fixes = _indoor_score(answers, outdoor_aqi)
+    label, summary = _score_band(score)
     recommendations = _tailor(BASE_RECOMMENDATIONS, answers)
     if gemini_service.is_enabled():
         try:
@@ -142,8 +157,7 @@ def assess(payload, air=None):
             enhanced = None
         if enhanced:
             summary = enhanced.get("summary") or summary
-            if enhanced.get("immediate"):
-                fixes = list(enhanced["immediate"]) + fixes
+            fixes = list(enhanced["immediate"]) + fixes if enhanced.get("immediate") else fixes
 
     return {
         "score": score,

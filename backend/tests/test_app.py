@@ -421,7 +421,11 @@ def test_deleted_user_token_rejected(client):
     # confirm works
     ok = client.get("/api/profile", headers=headers)
     assert ok.status_code == 200
-    deleted = client.delete("/api/profile", headers=headers)
+    deleted = client.delete(
+        "/api/profile",
+        headers=headers,
+        json={"confirm_delete": True, "current_password": "testpass123"},
+    )
     assert deleted.status_code == 200
     # token now points to deleted user; protected routes should reject (404/401)
     resp = client.get("/api/profile", headers=headers)

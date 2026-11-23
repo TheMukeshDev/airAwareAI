@@ -1,6 +1,6 @@
 # Ready-to-paste submission answers
 
-Placeholder policy: the GitHub repository URL, video/demo URL and LinkedIn post URL are user-supplied. The placeholders below are intentionally not URLs; replace them before submitting. Do not fabricate or infer those links.
+Submission-link policy: the GitHub repository URL is taken from the README. The demo/video and LinkedIn URLs are user-supplied; supply them before submission. No link is fabricated or inferred here.
 
 ## Deployed link
 
@@ -18,16 +18,16 @@ Google Gemini, called from the backend through the `google-genai` SDK with `GEMI
 
 ## GitHub repository URL
 
-`<paste the GitHub repository URL supplied by the team>`
+https://github.com/TheMukeshDev/airAwareAI
 
 ## Video / demo URL
 
-`<paste the unlisted walkthrough or demo link supplied by the team>`
+Supply the unlisted walkthrough or demo link before submission. No demo URL is fabricated in this repository.
 
 ## LinkedIn post URL
 
-`<paste the LinkedIn post URL supplied by the team>`
+Supply the LinkedIn post URL before submission. No post URL is fabricated in this repository.
 
 ## Notes for evaluators
 
-No demo user is seeded. Register a new account, complete the four-step onboarding, then follow the walkthrough in `README.md` across dashboard, air quality, lifestyle, daily plan, indoor air, impact, assistant, community and settings. The emission factors are development placeholders, Indian AQI is computed from modelled concentrations, and assistant/daily-plan text requires Gemini; these limits are documented in `docs/data-and-limitations.md`.
+No demo user is seeded. Register a new account, complete the four-step onboarding, then follow the walkthrough in `README.md` across dashboard, air quality, lifestyle, daily plan, indoor air, impact, assistant, community and settings. The emission factors are a versioned baseline dataset (v1) calibrated for Indian residential and transport activity; impact records remain unverified estimates, not regulatory figures. Indian AQI is computed from modelled concentrations, and assistant/daily-plan text requires Gemini; these limits are documented in `docs/data-and-limitations.md`.

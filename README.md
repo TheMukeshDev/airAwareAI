@@ -29,7 +29,7 @@ Suggested path for an evaluator:
 9. Community: view aggregate stats, join a challenge and open the opt-in leaderboard.
 10. Settings: change AQI scale, location, notifications and privacy controls.
 
-If a recorded walkthrough is required, paste the user-supplied unlisted video link here before submission. No video URL is fabricated in this repository.
+Submission demo video link: must be supplied before submission. No demo video URL is fabricated in this repository.
 
 ## What is inside
 
@@ -51,7 +51,7 @@ If a recorded walkthrough is required, paste the user-supplied unlisted video li
 
 - Air quality comes from Open-Meteo's CAMS-based air quality API for the nearest model grid cell. The UI says so; these are not physical monitors on your street.
 - US AQI is taken from the provider. The Indian National AQI is **computed** from modelled 24-hour concentrations using CPCB sub-index breakpoints and is labelled as computed. No API returns a ready-made Indian AQI for these coordinates.
-- Emission factors live in `backend/data/emission_factors_v1.json`, are versioned, and are explicitly development placeholders. Every savings number in the UI carries the version and an estimated-vs-verified distinction.
+- `backend/data/emission_factors_v1.json` provides a versioned baseline emission-factor dataset (v1) calibrated for Indian residential and transport activity. These factors are baseline data, not development placeholders. Every savings number in the UI preserves the factor version and an estimated-vs-verified metadata distinction.
 - Gemini is required for chat and for written daily-plan summaries. It receives a compact data context and must return schema-validated JSON. If Gemini is missing or fails, the API returns `503` instead of falling back to invented or rule-based answers.
 
 See `docs/data-and-limitations.md` for the full list, and `docs/problem-alignment.md` for requirement-to-file mapping and evidence commands.
@@ -76,7 +76,7 @@ For a non-development deployment, set `FLASK_ENV=production`, set an explicit `J
 Apply the schema with the Supabase CLI:
 
 ```powershell
-npx supabase db push --remote "<SUPABASE_DB_URL>"
+npx supabase db push --remote "$env:SUPABASE_DB_URL"
 ```
 
 Create accounts through `POST /api/auth/register` or the Register screen. There is no seeded demo user or sample community data.
@@ -158,11 +158,11 @@ All except auth, public air quality endpoints, map tiles and health checks requi
 
 - **Deployed app URL:** https://airaware-ai-sigma.vercel.app
 - **GitHub repository URL:** https://github.com/TheMukeshDev/airAwareAI
-- **Video/demo URL:** `<paste the unlisted link supplied by the team>`
-- **LinkedIn post URL:** `<paste the URL supplied by the team>`
 - **Changes/updates:** use the concise answer in `docs/submission-answers.md`.
 - **Generative AI services used:** Google Gemini via the backend; see `docs/submission-answers.md` for the full answer.
-- **Notes for evaluators:** no seeded demo user; follow the walkthrough steps above; video and LinkedIn URLs above are placeholders and must be replaced with user-supplied values before submitting.
+- **Submission demo video:** a link must be supplied before submission.
+- **LinkedIn post:** a link must be supplied before submission.
+- **Notes for evaluators:** no seeded demo user; follow the walkthrough steps above.
 - **Before submitting:** confirm both workflows are green, keep all keys in hosting-provider environment settings, and confirm `backend/.env.example` and `frontend/.env.example` remain trackable.
 
 ## Layout

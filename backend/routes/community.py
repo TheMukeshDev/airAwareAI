@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from security import shared_rate_limit
 from services import community_service
 from utils.http import error, pagination, require_auth
-from utils.validation import ensure_json_object
+from utils.validation import ensure_json_object, reject_unknown_keys
 
 community_bp = Blueprint("community", __name__)
 logger = logging.getLogger(__name__)
@@ -33,19 +33,31 @@ def challenges(user_id):
         return error("Could not load community challenges.", 503)
 
 
+def _challenge_id_from_payload():
+    data = request.get_json(silent=True)
+    data, failure = ensure_json_object(data)
+    if failure:
+        return None, failure
+    failure = reject_unknown_keys(data, {"challenge_id"}, "challenge join")
+    if failure:
+        return None, failure
+    challenge_id = data.get("challenge_id")
+    if not isinstance(challenge_id, str) or not challenge_id.strip():
+        return None, error("challenge_id is required.", 422)
+    if len(challenge_id.strip()) > 100:
+        return None, error("challenge_id must be at most 100 characters.", 422)
+    return challenge_id.strip(), None
+
+
 @community_bp.post("/community/challenges/join")
 @require_auth
 @shared_rate_limit("community.join", 30, 60)
 def join(user_id):
-    data = request.get_json(silent=True)
-    data, failure = ensure_json_object(data)
+    challenge_id, failure = _challenge_id_from_payload()
     if failure:
         return failure
-    challenge_id = data.get("challenge_id")
-    if not isinstance(challenge_id, str) or not challenge_id.strip():
-        return error("challenge_id is required.", 422)
     try:
-        return jsonify(community_service.join_challenge(user_id, challenge_id.strip()))
+        return jsonify(community_service.join_challenge(user_id, challenge_id))
     except LookupError:
         return error("Challenge not found.", 404)
 

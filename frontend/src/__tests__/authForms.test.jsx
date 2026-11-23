@@ -14,8 +14,8 @@ vi.mock("../services/api", () => ({
   apiError: () => "Request failed",
 }));
 
-import { Login } from "../pages/Login";
-import { Register } from "../pages/Register";
+import Login from "../pages/Login";
+import Register from "../pages/Register";
 
 describe("auth forms", () => {
   it("announces login validation errors", async () => {

@@ -1,360 +1,105 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Bot, ShieldCheck, Sparkles, User } from "lucide-react";
-import toast from "react-hot-toast";
+import { useEffect, useRef } from "react";
+import { Bot } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
-import { Button } from "../components/common/Button";
 import { Badge } from "../components/common/Badge";
-import { Card, CardDescription, CardHeader, CardTitle } from "../components/common/Card";
-import { DataNote } from "../components/common/DataNote";
-import { ErrorState } from "../components/common/ErrorState";
-import { useAsyncResource } from "../hooks/useAsyncResource";
+import { Button } from "../components/common/Button";
+import { Card } from "../components/common/Card";
 import { useAuth } from "../context/AuthContext";
-
 import { useAirQuality, useUserCoords } from "../hooks/useAirQuality";
-import { assistantApi, apiError } from "../services/api";
+import { useAssistantChat } from "../hooks/useAssistantChat";
 import { classifyAqi } from "../lib/aqi";
-import { cn, formatNumber, safeExternalUrl } from "../lib/utils";
+import { ChatMessageList } from "../components/assistant/ChatMessageList";
+import { SuggestedPrompts } from "../components/assistant/SuggestedPrompts";
+import { AssistantComposer } from "../components/assistant/AssistantComposer";
+import { LiveContextCard, SafetyCard, AssistantDataNote } from "../components/assistant/LiveContextCard";
 
-const SUGGESTIONS = [
-  "Is it safe to run outside this evening?",
-  "Explain today's PM2.5 in simple terms.",
-  "How can I reduce exposure on my commute?",
-  "What should I change in my kitchen to cut indoor smoke?",
-  "Which of my habits creates the most emissions?",
-];
-
-function scrollToBottom(element) {
+function scrollToEnd(element) {
   if (!element) return;
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   element.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "end" });
 }
 
-export function Assistant() {
+export default function Assistant() {
   const { user } = useAuth();
   const coords = useUserCoords(user);
   const { data: reading } = useAirQuality(coords);
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [chatError, setChatError] = useState(null);
-  const bottomRef = useRef(null);
-  const sendingRef = useRef(false);
-  const category = classifyAqi(reading?.aqi ?? null, reading?.scale ?? "us");
-
-
-  const history = useAsyncResource(
-    async () => {
-      const data = await assistantApi.history();
-      return (data.messages ?? []).map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        sources: message.sources,
-      }));
-    },
-    [],
-    { initialData: [], fallback: "Could not load your chat history." },
-  );
-
-  const displayMessages = useMemo(() => [...(history.data ?? []), ...messages], [history.data, messages]);
+  const { messages, draft, setDraft, sending, error, send, retry, validated, history } = useAssistantChat();
+  const endRef = useRef(null);
 
   useEffect(() => {
-    scrollToBottom(bottomRef.current);
-  }, [displayMessages, sending]);
+    scrollToEnd(endRef.current);
+  }, [messages, sending]);
 
-  const send = async (text) => {
-    const content = (text ?? input).trim();
-    if (!content || sendingRef.current) return;
-    sendingRef.current = true;
-    const userMessage = { id: `local-${Date.now()}`, role: "user", content };
-    setMessages((current) => [...current, userMessage]);
-    setInput("");
-    setSending(true);
-    setChatError(null);
-
-    try {
-      const data = await assistantApi.chat({ message: content });
-      const reply = {
-        id: data.id ?? `reply-${Date.now()}`,
-        role: "assistant",
-        content: data.reply,
-        sources: data.sources,
-        schemaValidated: data.schema_validated,
-      };
-      setMessages((current) => [...current, reply]);
-
-    } catch (error) {
-      const msg = apiError(error, "The assistant could not answer right now.");
-      toast.error(msg);
-      setChatError(msg);
-      setMessages((current) => [
-        ...current,
-        {
-          id: `error-${Date.now()}`,
-          role: "assistant",
-          content:
-            "I could not reach the AirAware reasoning service. Your readings are unaffected — please try again in a moment.",
-          error: true,
-        },
-      ]);
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
-    }
-
-  };
-
-  const retryLast = () => {
-    const lastUser = [...displayMessages].reverse().find((message) => message.role === "user");
-    setMessages((current) => current.filter((message) => message.id !== lastUser?.id && !message.error));
-    if (lastUser) send(lastUser.content);
-  };
-
-  const lastAssistant = [...displayMessages].reverse().find((m) => m.role === "assistant" && !m.error);
-  const schemaValidated = Boolean(lastAssistant?.schemaValidated);
+  const category = classifyAqi(reading?.aqi ?? null, reading?.scale ?? "us");
+  const locationName = reading?.location?.name ?? user?.location?.city ?? "no location";
 
   return (
     <div className="space-y-5">
       <PageHeader
-
         eyebrow="Module 06"
         title="Ask AirAware AI"
         description="Grounded answers about today's air and your habits. The assistant explains supplied readings — it never invents them."
         actions={
           <Badge tone="aurora" dot>
-            {schemaValidated ? "Gemini · schema validated" : "Generated by Gemini"}
+            {validated ? "Gemini · schema validated" : "Generated by Gemini"}
           </Badge>
         }
-
       />
-
       <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
         <Card className="flex h-[calc(100vh-330px)] min-h-[460px] flex-col p-0" aria-busy={sending || history.loading}>
           <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-aurora-400/25 to-glow-400/15 text-aurora-300" aria-hidden="true">
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-aurora-400/25 to-glow-400/15 text-aurora-300"
+              >
                 <Bot size={16} />
               </span>
               <div>
                 <p className="text-[13px] font-semibold text-white">AirAware Assistant</p>
                 <p className="text-[10.5px] text-slate-400">
-                  Context: {reading?.location?.name ?? user?.location?.city ?? "no location"} · AQI {reading?.aqi ?? "—"}
+                  Context: {locationName} · AQI {reading?.aqi ?? "—"}
                 </p>
               </div>
             </div>
-            <Badge tone={category.tone} dot>{category.label}</Badge>
+            <Badge tone={category.tone} dot>
+              {category.label}
+            </Badge>
           </div>
-
-          {chatError ? (
+          {error ? (
             <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-verypoor/25 bg-verypoor/[0.06] px-4 py-2 text-[12px] text-verypoor/90">
-              <span>{chatError}</span>
-              <Button type="button" variant="secondary" size="sm" onClick={retryLast}>
+              <span>{error}</span>
+              <Button type="button" variant="secondary" size="sm" onClick={retry}>
                 Retry
               </Button>
             </div>
           ) : null}
-
-          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4" role="log" aria-live="polite" aria-relevant="additions">
-            {history.error ? (
-              <ErrorState message={history.error} onRetry={history.reload} retryLabel="Retry history" />
-            ) : null}
-            {!displayMessages.length && !history.loading && !history.error ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-aurora-400/25 bg-aurora-400/10 text-aurora-300" aria-hidden="true">
-                  <Sparkles size={20} />
-                </span>
-                <div>
-                  <p className="text-[13.5px] font-medium text-slate-200">Ask about your air</p>
-                  <p className="mt-1 max-w-xs text-[11.5px] leading-relaxed text-slate-400">
-                    I can see today&apos;s reading for {reading?.location?.name ?? "your city"}, your commute mode and your
-                    household profile.
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            {displayMessages.map((message) => (
-              <div
-                key={message.id}
-                className={cn("flex gap-2.5", message.role === "user" ? "flex-row-reverse" : "")}
-              >
-                <span
-                  className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border",
-                    message.role === "user"
-                      ? "border-white/10 bg-white/8 text-slate-300"
-                      : "border-aurora-400/25 bg-aurora-400/10 text-aurora-300",
-                  )}
-                  aria-hidden="true"
-                >
-                  {message.role === "user" ? <User size={13} /> : <Bot size={13} />}
-                </span>
-                <div
-                  className={cn(
-                    "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed",
-                    message.role === "user"
-                      ? "bg-aurora-400/15 text-aurora-100"
-                      : message.error
-                        ? "border border-verypoor/25 bg-verypoor/[0.06] text-verypoor/90"
-                        : "border border-hairline bg-ink-900/70 text-slate-300",
-                  )}
-                >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                  {message.sources?.length ? (
-                    <p className="mt-2 border-t border-white/8 pt-1.5 text-[10px] text-slate-400">
-                      Sources:{" "}
-                      {message.sources.map((source, index) => {
-                        const label = typeof source === "string" ? source : source?.title ?? source?.name ?? "Source";
-                        const url = typeof source === "string" ? null : safeExternalUrl(source?.url);
-                        return (
-                          <span key={`${label}-${index}`}>
-                            {index > 0 ? " · " : null}
-                            {url ? (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="underline decoration-dotted hover:text-slate-300"
-                              >
-                                {label}
-                              </a>
-                            ) : (
-                              label
-                            )}
-                          </span>
-                        );
-                      })}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-
-            {sending ? (
-              <div className="flex gap-2.5" aria-label="Assistant is replying">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-aurora-400/25 bg-aurora-400/10 text-aurora-300" aria-hidden="true">
-                  <Bot size={13} />
-                </span>
-                <div className="flex items-center gap-1 rounded-2xl border border-hairline bg-ink-900/70 px-3.5 py-3">
-                  {[0, 1, 2].map((dot) => (
-                    <span
-                      key={dot}
-                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-aurora-400/70"
-                      style={{ animationDelay: `${dot * 120}ms` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            <div ref={bottomRef} />
-          </div>
-
-          <div className="border-t border-hairline p-3">
-            {displayMessages.length === 0 ? (
-              <div className="no-scrollbar mb-2 flex gap-2 overflow-x-auto">
-                {SUGGESTIONS.slice(0, 3).map((question) => (
-                  <button
-                    key={question}
-                    type="button"
-                    onClick={() => send(question)}
-                    className="shrink-0 rounded-lg border border-hairline bg-ink-900/60 px-2.5 py-1.5 text-[11px] text-slate-400 hover:border-aurora-400/30 hover:text-slate-200"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                send();
-              }}
-              className="flex items-end gap-2"
-            >
-              <label htmlFor="assistant-input" className="sr-only">
-                Message AirAware
-              </label>
-              <textarea
-                id="assistant-input"
-                rows={1}
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder="Ask about today's air, your commute or your kitchen…"
-                className="max-h-28 min-h-[42px] flex-1 resize-none rounded-xl border border-hairline bg-ink-900/80 px-3.5 py-2.5 text-[12.5px] text-slate-100 placeholder:text-slate-400 focus:border-aurora-400/60"
-              />
-              <Button type="submit" size="icon" disabled={!input.trim() || sending} aria-label="Send message">
-                <ArrowUp size={16} aria-hidden="true" />
-              </Button>
-            </form>
+          <ChatMessageList
+            messages={messages}
+            historyError={history.error}
+            historyLoading={history.loading}
+            onRetryHistory={history.reload}
+            sending={sending}
+            locationName={reading?.location?.name ?? "your city"}
+          />
+          <div ref={endRef}>
+            <AssistantComposer
+              draft={draft}
+              onDraftChange={setDraft}
+              onSend={send}
+              onSuggestion={send}
+              disabled={sending}
+              showSuggestions={messages.length === 0}
+            />
           </div>
         </Card>
-
         <div className="space-y-4">
-          <Card>
-            <CardHeader action={<Badge tone="neutral">Live context</Badge>}>
-              <CardTitle as="h2">What I can see</CardTitle>
-              <CardDescription>Only these values are supplied to the model.</CardDescription>
-            </CardHeader>
-            <div className="mt-4 space-y-2 text-[11.5px]">
-              {[
-                ["Location", reading?.location?.name ?? user?.location?.city ?? "Not set"],
-                ["AQI", reading?.aqi !== undefined && reading?.aqi !== null ? `${Math.round(reading.aqi)} (${reading.scale === "india" ? "India" : "US"})` : "Unavailable"],
-                ["PM2.5", reading?.pollutants?.pm2_5 !== undefined ? `${formatNumber(reading.pollutants.pm2_5)} µg/m³` : "Unavailable"],
-                ["Observed", reading?.observed_at ?? "—"],
-                ["Commute", user?.lifestyle?.primary_mode ?? user?.preferences?.transport ?? "Not set"],
-                ["Household", user?.lifestyle?.household_type ?? "Not set"],
-              ].map(([label, value]) => (
-                <div key={label} className="flex items-start justify-between gap-3 border-b border-hairline pb-2 last:border-0">
-                  <span className="shrink-0 text-slate-400">{label}</span>
-                  <span className="text-right text-slate-200">{value}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-            <CardTitle as="h2">Suggested questions</CardTitle>
-            <div className="mt-3 space-y-1.5">
-              {SUGGESTIONS.map((question) => (
-                <button
-                  key={question}
-                  type="button"
-                  onClick={() => send(question)}
-                  className="w-full rounded-xl border border-hairline bg-ink-900/50 px-3 py-2.5 text-left text-[11.5px] text-slate-400 transition-colors hover:border-aurora-400/30 hover:text-slate-200"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-            <CardTitle as="h2" className="flex items-center gap-2">
-              <ShieldCheck size={14} className="text-aurora-400" aria-hidden="true" />
-              Safety boundaries
-            </CardTitle>
-            <ul className="mt-3 space-y-2 text-[11.5px] leading-relaxed text-slate-400">
-              <li>No medical diagnosis or personal treatment advice.</li>
-              <li>No invented AQI, pollutant or savings figures.</li>
-              <li>No claim that an action immediately lowers citywide AQI.</li>
-              <li>Outdoor exertion advice follows public health thresholds.</li>
-            </ul>
-          </Card>
-
-          <DataNote tone="info">
-            Assistant replies are generated text. Treat them as guidance, not measurement — the numbers beside this chat
-            come from the air-quality API.
-          </DataNote>
+          <LiveContextCard reading={reading} user={user} />
+          <SuggestedPrompts onSelect={send} />
+          <SafetyCard />
+          <AssistantDataNote />
         </div>
       </div>
     </div>
   );
 }
-
-export default Assistant;

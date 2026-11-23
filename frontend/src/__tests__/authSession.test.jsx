@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../context/AuthProvider";
 import { useAuth } from "../context/AuthContext";
@@ -58,7 +58,9 @@ describe("auth session", () => {
     renderSession();
     expect(await screen.findByText("Fresh User")).toBeInTheDocument();
 
-    window.dispatchEvent(new Event("airaware:unauthorized"));
+    await act(async () => {
+      window.dispatchEvent(new Event("airaware:unauthorized"));
+    });
 
     expect(await screen.findByText("none")).toBeInTheDocument();
     expect(screen.getByTestId("session")).toHaveAttribute("data-auth", "false");

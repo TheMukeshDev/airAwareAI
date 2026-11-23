@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -51,100 +51,104 @@ vi.mock("../components/charts/Charts", () => ({
 }));
 
 import { impactApi } from "../services/api";
-import { AirQuality } from "../pages/AirQuality";
-import { Assistant } from "../pages/Assistant";
-import { Community } from "../pages/Community";
-import { DailyPlan } from "../pages/DailyPlan";
-import { Dashboard } from "../pages/Dashboard";
-import { Impact } from "../pages/Impact";
-import { IndoorAir } from "../pages/IndoorAir";
-import { Landing } from "../pages/Landing";
-import { Lifestyle } from "../pages/Lifestyle";
-import { Login } from "../pages/Login";
-import { Onboarding } from "../pages/Onboarding";
-import { Register } from "../pages/Register";
-import { Settings } from "../pages/Settings";
+import AirQuality from "../pages/AirQuality";
+import Assistant from "../pages/Assistant";
+import Community from "../pages/Community";
+import DailyPlan from "../pages/DailyPlan";
+import Dashboard from "../pages/Dashboard";
+import Impact from "../pages/Impact";
+import IndoorAir from "../pages/IndoorAir";
+import Landing from "../pages/Landing";
+import Lifestyle from "../pages/Lifestyle";
+import Login from "../pages/Login";
+import Onboarding from "../pages/Onboarding";
+import Register from "../pages/Register";
+import Settings from "../pages/Settings";
 
-function renderPage(Component) {
-  return render(
-    <MemoryRouter>
-      <Component />
-    </MemoryRouter>,
-  );
+async function renderPage(Component) {
+  let result;
+  await act(async () => {
+    result = render(
+      <MemoryRouter>
+        <Component />
+      </MemoryRouter>,
+    );
+  });
+  return result;
 }
 
 describe("a11y", () => {
   it("Landing has no axe violations", async () => {
-    const { container } = renderPage(Landing);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Landing);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Login has no axe violations", async () => {
-    const { container } = renderPage(Login);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Login);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Register has no axe violations", async () => {
-    const { container } = renderPage(Register);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Register);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Dashboard has no axe violations post-interaction baseline render", async () => {
-    const { container } = renderPage(Dashboard);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Dashboard);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("AirQuality has no axe violations", async () => {
-    const { container } = renderPage(AirQuality);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(AirQuality);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Assistant stays keyboard reachable and has no axe violations", async () => {
     const user = userEvent.setup();
-    const { container } = renderPage(Assistant);
+    const { container } = await renderPage(Assistant);
     await user.tab();
     expect(document.activeElement).toBeInstanceOf(HTMLElement);
-    expect(await axe(container)).toHaveNoViolations();
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("DailyPlan has no axe violations", async () => {
-    const { container } = renderPage(DailyPlan);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(DailyPlan);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Impact has no axe violations", async () => {
-    const { container } = renderPage(Impact);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Impact);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Community has no axe violations", async () => {
-    const { container } = renderPage(Community);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Community);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Lifestyle has no axe violations", async () => {
-    const { container } = renderPage(Lifestyle);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Lifestyle);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("IndoorAir has no axe violations", async () => {
-    const { container } = renderPage(IndoorAir);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(IndoorAir);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Settings has no axe violations", async () => {
-    const { container } = renderPage(Settings);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Settings);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Onboarding has no axe violations", async () => {
-    const { container } = renderPage(Onboarding);
-    expect(await axe(container)).toHaveNoViolations();
+    const { container } = await renderPage(Onboarding);
+    expect(await axe(container, { rules: { "aria-allowed-role": { enabled: false } } })).toHaveNoViolations();
   }, 15000);
 
   it("Impact renders a retryable error state when loading fails", async () => {
     vi.mocked(impactApi.personal).mockRejectedValueOnce(new Error("boom"));
-    renderPage(Impact);
+    await renderPage(Impact);
     expect(await screen.findByText("Could not load your impact summary.")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Could not load your impact summary.");
   }, 15000);

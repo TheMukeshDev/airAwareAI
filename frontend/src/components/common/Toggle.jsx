@@ -2,20 +2,29 @@
 
 export function Toggle({ checked, onChange, label, description, id, className, labelId }) {
   const computedLabelId = labelId || (id ? `${id}-label` : undefined);
+  const descriptionId = description && id ? `${id}-description` : undefined;
+  const accessibleLabel = computedLabelId
+    ? { "aria-labelledby": computedLabelId }
+    : { "aria-label": label || "Toggle" };
   return (
     <div className={cn("flex items-start justify-between gap-4", className)}>
       <div className="min-w-0">
         <span id={computedLabelId} className="text-[13.5px] font-medium text-slate-200">
           {label}
         </span>
-        {description ? <p className="mt-0.5 text-[12.5px] leading-snug text-slate-400">{description}</p> : null}
+        {description ? (
+          <p id={descriptionId} className="mt-0.5 text-[12.5px] leading-snug text-slate-400">
+            {description}
+          </p>
+        ) : null}
       </div>
       <button
         type="button"
         role="switch"
         id={id}
+        {...accessibleLabel}
         aria-checked={Boolean(checked)}
-        aria-labelledby={computedLabelId}
+        aria-describedby={descriptionId}
         onClick={() => onChange?.(!checked)}
         className={cn(
           "relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors duration-200",
@@ -50,6 +59,7 @@ export function Segmented({ options, value, onChange, size = "md", className, ar
           <button
             key={option.value}
             type="button"
+            aria-label={option.label}
             aria-pressed={active}
             onClick={() => onChange?.(option.value)}
             className={cn(

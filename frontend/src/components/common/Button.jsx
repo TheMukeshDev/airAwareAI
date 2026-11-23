@@ -35,6 +35,12 @@ export const Button = forwardRef(function Button(
     className,
   );
 
+  const isDisabled = Boolean(disabled || loading);
+  const a11y = {
+    "aria-disabled": isDisabled || undefined,
+    "aria-busy": loading || undefined,
+  };
+
   const content = (
     <>
       {loading ? (
@@ -46,7 +52,7 @@ export const Button = forwardRef(function Button(
 
   if (to) {
     return (
-      <Link ref={ref} to={to} className={classes} {...props}>
+      <Link ref={ref} to={to} className={classes} {...props} {...a11y}>
         {content}
       </Link>
     );
@@ -56,20 +62,20 @@ export const Button = forwardRef(function Button(
     const safeHref = safeExternalUrl(href);
     if (!safeHref) {
       return (
-        <span ref={ref} className={cn(classes, "cursor-not-allowed opacity-50")} aria-disabled="true" {...props}>
+        <span ref={ref} className={cn(classes, "cursor-not-allowed opacity-50")} {...props} {...a11y} aria-disabled="true">
           {content}
         </span>
       );
     }
     return (
-      <a ref={ref} href={safeHref} className={classes} {...props}>
+      <a ref={ref} href={safeHref} className={classes} {...props} {...a11y}>
         {content}
       </a>
     );
   }
 
   return (
-    <button ref={ref} type={type} className={classes} disabled={disabled || loading} {...props}>
+    <button ref={ref} type={type} className={classes} disabled={isDisabled} {...props} {...a11y}>
       {content}
     </button>
   );

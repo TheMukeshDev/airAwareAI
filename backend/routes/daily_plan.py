@@ -9,7 +9,7 @@ from services import recommendation_engine
 from services.air_lookup import require_air_for_user
 from services.impact_calculator import normalize_profile
 from utils.http import error, iso, now_utc, require_auth
-from utils.validation import ensure_json_object, parse_bool
+from utils.validation import ensure_json_object, parse_bool, reject_unknown_keys
 
 daily_plan_bp = Blueprint("daily_plan", __name__)
 logger = logging.getLogger(__name__)
@@ -33,14 +33,27 @@ def _generate(user, regenerate=False):
     air, air_error = require_air_for_user(user)
     if air_error:
         return None, air_error
+    return _build_and_store_plan(user, air, regenerate)
+
+
+def _build_and_store_plan(user, air, regenerate):
     profile = normalize_profile(user.get("lifestyle") or {})
+    plan = _generate_plan(user, air, profile, regenerate)
+    if isinstance(plan, tuple):
+        return plan
+    return _store_generated_plan(user, plan)
+
+
+def _generate_plan(user, air, profile, regenerate):
     try:
-        plan = recommendation_engine.build_plan(air, profile, user.get("name"), regenerate=regenerate)
+        return recommendation_engine.build_plan(air, profile, user.get("name"), regenerate=regenerate)
     except Exception as exc:
         logger.exception("Daily plan generation failed")
-        if "Gemini" in str(exc):
-            return None, error("Gemini could not generate today's plan. Please retry.", 503)
-        return None, error("Could not generate today's plan.", 503)
+        message = "Gemini could not generate today's plan. Please retry." if "Gemini" in str(exc) else "Could not generate today's plan."
+        return None, error(message, 503)
+
+
+def _store_generated_plan(user, plan):
     plan.update({"user_id": user["_id"], "date": _today(), "created_at": now_utc(), "updated_at": now_utc()})
     previous = daily_plans.find_one({"user_id": user["_id"], "date": plan["date"]})
     completed = {
@@ -87,51 +100,69 @@ def today_plan(user_id):
 @shared_rate_limit("daily_plan.generate", 20, 3600)
 def generate_plan(user_id):
     data = request.get_json(silent=True)
-    if data is None:
-        data = {}
     data, failure = ensure_json_object(data)
+    if failure:
+        return failure
+    failure = reject_unknown_keys(data, {"regenerate"}, "daily plan")
     if failure:
         return failure
     user = find_user(user_id)
     if not user:
         return error("Profile not found.", 404)
-
-    regenerate = parse_bool(data.get("regenerate"), False)
-    if not regenerate:
-        existing = daily_plans.find_one({"user_id": user_id, "date": _today()})
-        if existing:
-            return jsonify({"plan": serialize_plan(existing)})
-    plan, failure = _generate(user, regenerate=regenerate)
+    result = _existing_or_generate(user, data)
+    if isinstance(result, tuple):
+        plan, failure = result
+    else:
+        return result
     if failure:
         return failure
     return jsonify({"plan": serialize_plan(plan)})
+
+
+def _existing_or_generate(user, data):
+    regenerate = parse_bool(data.get("regenerate"), False)
+    if not regenerate:
+        existing = daily_plans.find_one({"user_id": user["_id"], "date": _today()})
+        if existing:
+            return jsonify({"plan": serialize_plan(existing)})
+    return _generate(user, regenerate=regenerate)
+
+
+def _toggle_action_value():
+    data = request.get_json(silent=True)
+    data, failure = ensure_json_object(data)
+    if failure:
+        return None, failure
+    failure = reject_unknown_keys(data, {"completed"}, "daily plan action")
+    if failure:
+        return None, failure
+    if not isinstance(data.get("completed"), bool):
+        return None, error("completed must be a boolean.", 422)
+    return data["completed"], None
 
 
 @daily_plan_bp.patch("/daily-plan/<plan_id>/actions/<action_id>")
 @require_auth
 def toggle_action(user_id, plan_id, action_id):
-    data = request.get_json(silent=True)
-    data, failure = ensure_json_object(data)
+    completed, failure = _toggle_action_value()
     if failure:
         return failure
-    if "completed" not in data:
-        return error("completed is required.", 422)
-    completed = parse_bool(data.get("completed"), False)
-
     plan = daily_plans.find_one({"_id": plan_id, "user_id": user_id})
     if not plan:
         return error("Plan not found.", 404)
-
-    actions = plan.get("actions") or []
-    found = False
-    for action in actions:
-        if str(action.get("id")) == str(action_id):
-            action["completed"] = bool(completed)
-            found = True
-            break
-    if not found:
+    actions = _toggle_plan_action(plan, action_id, completed)
+    if actions is None:
         return error("Action not found in this plan.", 404)
 
     daily_plans.update_one({"_id": plan["_id"]}, {"$set": {"actions": actions, "updated_at": now_utc()}})
     plan["actions"] = actions
     return jsonify({"plan": serialize_plan(plan)})
+
+
+def _toggle_plan_action(plan, action_id, completed):
+    actions = plan.get("actions") or []
+    matches = [action for action in actions if str(action.get("id")) == str(action_id)]
+    if not matches:
+        return None
+    matches[0]["completed"] = bool(completed)
+    return actions

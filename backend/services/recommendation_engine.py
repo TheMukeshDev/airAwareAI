@@ -13,17 +13,14 @@ SLOT_ORDER = {"morning": 0, "midday": 1, "afternoon": 2, "evening": 3, "night": 
 def _aqi_band(aqi):
     if aqi is None:
         return "unknown"
-    if aqi <= 50:
-        return "good"
-    if aqi <= 100:
-        return "moderate"
-    if aqi <= 150:
-        return "unhealthy_sensitive"
-    if aqi <= 200:
-        return "unhealthy"
-    if aqi <= 300:
-        return "very_unhealthy"
-    return "hazardous"
+    bands = (
+        (50, "good"),
+        (100, "moderate"),
+        (150, "unhealthy_sensitive"),
+        (200, "unhealthy"),
+        (300, "very_unhealthy"),
+    )
+    return next((label for limit, label in bands if aqi <= limit), "hazardous")
 
 
 def _alert(aqi):
@@ -78,70 +75,42 @@ def _commute_action(profile, aqi):
     }
 
 
+def _window_actions(window, aqi):
+    if not window.get("label"):
+        return []
+    if aqi is not None and aqi <= 100:
+        return [{"title": f"Open windows during {window['label']}", "detail": f"Modelled PM2.5 is lowest around then (about {window.get('pm2_5')} ug/m3). Air the rooms for 15-20 minutes.",
+                 "why": "Outdoor particulate levels set how much pollution comes in when you ventilate.", "priority": "high",
+                 "slot": "morning", "co2_saved_kg": 0.0, "safety": "Close windows before traffic peaks and if you smell smoke.",
+                 "category": "indoor_air", "factor_version": FACTOR_VERSION}]
+    return [{"title": f"Keep windows closed, then ventilate at {window['label']}",
+             "detail": "Today's outdoor PM2.5 stays elevated. The cleanest modelled window is short, so use it and close up again.",
+             "why": "Ventilating during the cleanest window limits how much pollution settles indoors.", "priority": "high",
+             "slot": "morning", "co2_saved_kg": 0.0, "safety": "Do not seal a room with a running gas appliance or open flame.",
+             "category": "indoor_air", "factor_version": FACTOR_VERSION}]
+
+
+def _movement_action(window, aqi):
+    if aqi is not None and aqi > 150:
+        return {"title": "Move the workout indoors", "detail": "Swap the run or cycle for an indoor session, and keep the session shorter than usual.",
+                "why": "Breathing rate rises several times during exercise, which multiplies the pollution inhaled.", "priority": "high",
+                "slot": "evening", "co2_saved_kg": 0.0, "safety": "Stop and rest if you feel chest tightness or a cough.",
+                "category": "health", "factor_version": FACTOR_VERSION}
+    return {"title": "Use the cleaner hours for outdoor movement",
+            "detail": f"Aim for a walk or cycle around {window.get('label') or 'early morning'} when PM2.5 is lowest.",
+            "why": "Same distance, less pollution inhaled, and walking or cycling emits nothing at the tailpipe.",
+            "priority": "medium", "slot": "morning", "co2_saved_kg": 0.0,
+            "safety": "Choose a side street away from traffic where possible.",
+            "category": "health", "factor_version": FACTOR_VERSION}
+
+
 def build_actions(context, profile):
     aqi = context.get("aqi")
     pm2_5 = context.get("pm2_5")
     window = context.get("outdoor_window") or {}
     actions = []
-
-    if window.get("label"):
-        if aqi is not None and aqi <= 100:
-            actions.append(
-                {
-                    "title": f"Open windows during {window['label']}",
-                    "detail": f"Modelled PM2.5 is lowest around then (about {window.get('pm2_5')} ug/m3). Air the rooms for 15-20 minutes.",
-                    "why": "Outdoor particulate levels set how much pollution comes in when you ventilate.",
-                    "priority": "high",
-                    "slot": "morning",
-                    "co2_saved_kg": 0.0,
-                    "safety": "Close windows before traffic peaks and if you smell smoke.",
-                    "category": "indoor_air",
-                    "factor_version": FACTOR_VERSION,
-                }
-            )
-        else:
-            actions.append(
-                {
-                    "title": f"Keep windows closed, then ventilate at {window['label']}",
-                    "detail": "Today's outdoor PM2.5 stays elevated. The cleanest modelled window is short, so use it and close up again.",
-                    "why": "Ventilating during the cleanest window limits how much pollution settles indoors.",
-                    "priority": "high",
-                    "slot": "morning",
-                    "co2_saved_kg": 0.0,
-                    "safety": "Do not seal a room with a running gas appliance or open flame.",
-                    "category": "indoor_air",
-                    "factor_version": FACTOR_VERSION,
-                }
-            )
-
-    if aqi is not None and aqi > 150:
-        actions.append(
-            {
-                "title": "Move the workout indoors",
-                "detail": "Swap the run or cycle for an indoor session, and keep the session shorter than usual.",
-                "why": "Breathing rate rises several times during exercise, which multiplies the pollution inhaled.",
-                "priority": "high",
-                "slot": "evening",
-                "co2_saved_kg": 0.0,
-                "safety": "Stop and rest if you feel chest tightness or a cough.",
-                "category": "health",
-                "factor_version": FACTOR_VERSION,
-            }
-        )
-    else:
-        actions.append(
-            {
-                "title": "Use the cleaner hours for outdoor movement",
-                "detail": f"Aim for a walk or cycle around {window.get('label') or 'early morning'} when PM2.5 is lowest.",
-                "why": "Same distance, less pollution inhaled, and walking or cycling emits nothing at the tailpipe.",
-                "priority": "medium",
-                "slot": "morning",
-                "co2_saved_kg": 0.0,
-                "safety": "Choose a side street away from traffic where possible.",
-                "category": "health",
-                "factor_version": FACTOR_VERSION,
-            }
-        )
+    actions.extend(_window_actions(window, aqi))
+    actions.append(_movement_action(window, aqi))
 
     commute = _commute_action(profile, aqi)
     if commute:
@@ -211,19 +180,22 @@ def _numeric_tokens(text):
 def _allowed_numeric_context(context, actions):
     allowed = set()
     for value in (context or {}).values():
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            allowed.add(str(value).rstrip("0").rstrip(".") if isinstance(value, float) else str(value))
-            allowed.add(str(value))
-        elif isinstance(value, dict):
-            allowed.update(_numeric_tokens(" ".join(str(v) for v in value.values() if v is not None)))
-        elif isinstance(value, (list, tuple)):
-            allowed.update(_numeric_tokens(" ".join(str(v) for v in value)))
-        elif isinstance(value, str):
-            allowed.update(_numeric_tokens(value))
+        allowed.update(_context_numbers(value))
     for action in actions or []:
         for key in ("co2_saved_kg", "detail", "title", "why", "window"):
             allowed.update(_numeric_tokens(action.get(key)))
     return allowed
+
+
+def _context_numbers(value):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        numbers = {str(value)}
+        return numbers | ({str(value).rstrip("0").rstrip(".")} if isinstance(value, float) else set())
+    if isinstance(value, dict):
+        return _numeric_tokens(" ".join(str(v) for v in value.values() if v is not None))
+    if isinstance(value, (list, tuple)):
+        return _numeric_tokens(" ".join(str(v) for v in value))
+    return _numeric_tokens(value) if isinstance(value, str) else set()
 
 
 def _safe_text(original, candidate, allowed_numbers):
@@ -236,29 +208,46 @@ def _safe_text(original, candidate, allowed_numbers):
     return str(candidate).strip() or original
 
 
+def _plan_context(air, aqi):
+    return {"aqi": aqi, "scale": "US AQI", "pm2_5": (air.get("pollutants") or {}).get("pm2_5"),
+            "location": (air.get("location") or {}).get("name"), "source": air.get("source"),
+            "observed_at": air.get("observed_at"), "outdoor_window": air.get("ventilation_window"),
+            "alert": _alert(aqi), "india_aqi": air.get("aqi_india"), "factor_version": FACTOR_VERSION}
+
+
+def _plan_title(band):
+    if band == "good":
+        return "Good air today - make the most of it"
+    if band in {"unhealthy_sensitive", "unhealthy", "very_unhealthy", "hazardous"}:
+        return "Low-exposure day plan"
+    return "A cleaner day, planned around the air"
+
+
+def _enhanced_plan_text(title, summary, enhanced, context, actions):
+    allowed = _allowed_numeric_context(context, actions)
+    allowed.update(_numeric_tokens(title))
+    allowed.update(_numeric_tokens(summary))
+    title = _safe_text(title, enhanced.get("title"), allowed)
+    summary = _safe_text(summary, enhanced.get("summary"), allowed)
+    overrides = {str(item["id"]): item for item in (enhanced.get("actions") or [])
+                 if isinstance(item, dict) and item.get("id")}
+    for action in actions:
+        patch = overrides.get(action["id"]) or {}
+        if patch.get("detail"):
+            action["detail"] = _safe_text(action["detail"], patch["detail"], allowed)
+        if patch.get("why"):
+            action["why"] = _safe_text(action["why"], patch["why"], allowed)
+    return title, summary
+
+
 def build_plan(air, profile, user_name=None, regenerate=False):
     aqi = air.get("aqi")
     band = _aqi_band(aqi)
-    context = {
-        "aqi": aqi,
-        "scale": "US AQI",
-        "pm2_5": (air.get("pollutants") or {}).get("pm2_5"),
-        "location": (air.get("location") or {}).get("name"),
-        "source": air.get("source"),
-        "observed_at": air.get("observed_at"),
-        "outdoor_window": air.get("ventilation_window"),
-        "alert": _alert(aqi),
-        "india_aqi": air.get("aqi_india"),
-        "factor_version": FACTOR_VERSION,
-    }
+    context = _plan_context(air, aqi)
     normalized_profile = normalize_profile(profile)
     actions = build_actions(context, profile)
 
-    title = "A cleaner day, planned around the air"
-    if band == "good":
-        title = "Good air today - make the most of it"
-    elif band in {"unhealthy_sensitive", "unhealthy", "very_unhealthy", "hazardous"}:
-        title = "Low-exposure day plan"
+    title = _plan_title(band)
 
     summary = (
         f"US AQI is {aqi} at {context['location']}, with PM2.5 around "
@@ -275,22 +264,7 @@ def build_plan(air, profile, user_name=None, regenerate=False):
     if not enhanced:
         raise gemini_service.GeminiUnavailable("Gemini could not generate today's plan. Please retry.")
 
-    allowed_numbers = _allowed_numeric_context(context, actions)
-    allowed_numbers.update(_numeric_tokens(title))
-    allowed_numbers.update(_numeric_tokens(summary))
-    title = _safe_text(title, enhanced.get("title"), allowed_numbers)
-    summary = _safe_text(summary, enhanced.get("summary"), allowed_numbers)
-
-    overrides = {}
-    for item in enhanced.get("actions") or []:
-        if isinstance(item, dict) and item.get("id"):
-            overrides[str(item.get("id"))] = item
-    for action in actions:
-        patch = overrides.get(action["id"]) or {}
-        if patch.get("detail"):
-            action["detail"] = _safe_text(action.get("detail"), patch.get("detail"), allowed_numbers)
-        if patch.get("why"):
-            action["why"] = _safe_text(action.get("why"), patch.get("why"), allowed_numbers)
+    title, summary = _enhanced_plan_text(title, summary, enhanced, context, actions)
 
     return {
         "date": datetime.now(UTC).date().isoformat(),

@@ -28,6 +28,9 @@ if (!globalThis.ResizeObserver) {
 if (!globalThis.scrollTo) {
   globalThis.scrollTo = () => {};
 }
+if (globalThis.window) {
+  globalThis.window.scrollTo = () => {};
+}
 
 if (globalThis.HTMLElement && !globalThis.HTMLElement.prototype.scrollIntoView) {
   globalThis.HTMLElement.prototype.scrollIntoView = () => {};

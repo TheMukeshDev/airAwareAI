@@ -6,6 +6,7 @@
   CartesianGrid,
   Cell,
   Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -34,6 +35,15 @@ function ChartTooltip({ active, payload, label, unit }) {
       ))}
     </div>
   );
+}
+
+function chartSummary(data, label, unit) {
+  if (!data?.length) return `${label}. No data available.`;
+  const points = data
+    .slice(0, 8)
+    .map((row) => `${row.label ?? "Point"}: ${formatNumber(row.value)}${unit ? ` ${unit}` : ""}`)
+    .join(", ");
+  return `${label}. ${points}${data.length > 8 ? `, and ${data.length - 8} more points` : ""}.`;
 }
 
 function DataTable({ data, valueLabel = "Value", unit }) {
@@ -92,7 +102,7 @@ export function TrendChart({ data, dataKey = "value", color = "#3fe0ac", unit, h
           </Chart>
         </ResponsiveContainer>
       </div>
-      <figcaption className="sr-only">{ariaLabel}</figcaption>
+      <figcaption className="sr-only">{chartSummary(safeData, ariaLabel, unit)}</figcaption>
       <DataTable data={safeData} valueLabel="Value" unit={unit} />
     </figure>
   );
@@ -117,7 +127,7 @@ export function SimpleBarChart({ data, dataKey = "value", unit, height = 200, co
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <figcaption className="sr-only">{ariaLabel}</figcaption>
+      <figcaption className="sr-only">{chartSummary(safeData, ariaLabel, unit)}</figcaption>
       <DataTable data={safeData} valueLabel="Value" unit={unit} />
     </figure>
   );

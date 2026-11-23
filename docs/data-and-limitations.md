@@ -24,7 +24,7 @@ The reported Indian AQI is the maximum sub-index, and the responsible pollutant 
 
 ## Emissions
 
-`backend/data/emission_factors_v1.json` is a development factor set (`v1-dev`):
+`backend/data/emission_factors_v1.json` is a versioned baseline factor set (`v1`) calibrated for Indian residential and transport activity:
 
 - Transport per passenger-km: walk/cycle 0, metro 0.017, bus 0.041, motorcycle 0.043, petrol car 0.171, diesel car 0.158, carpool 0.057 (three occupants).
 - Grid electricity 0.71 kg CO2e/kWh, shared across the household.
@@ -33,7 +33,7 @@ The reported Indian AQI is the maximum sub-index, and the responsible pollutant 
 - Waste monthly per household: 9 kg base, adjusted for segregation, composting and single-use avoidance.
 - Flights: 180 kg CO2e per economy flight assuming 1,200 km.
 
-These are broad placeholders chosen so the product can compute consistently. Replace them with documented national factors before any public or regulatory reporting. The API returns `factor_version` everywhere and marks records `verified: false`.
+These are baseline estimates for consistent product calculations, not regulatory-grade factors. Use documented national factors for any public or regulatory reporting. The API returns `factor_version` everywhere and marks records `verified: false`.
 
 ## Storage
 

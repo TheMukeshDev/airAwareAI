@@ -81,8 +81,8 @@ class Config:
 
 class TestConfig(Config):
     TESTING = True
-    SECRET_KEY = "test-secret-key-not-for-production-0123456789"
-    JWT_SECRET_KEY = "test-jwt-secret-key-not-for-production-0123456789"
+    SECRET_KEY = _text("TEST_SECRET_KEY", "test-secret-key-not-for-production-0123456789")
+    JWT_SECRET_KEY = _text("TEST_JWT_SECRET_KEY", "test-jwt-secret-key-not-for-production-0123456789")
     DB_BACKEND = "memory"
     SUPABASE_DB_URL = ""
     GEMINI_API_KEY = ""

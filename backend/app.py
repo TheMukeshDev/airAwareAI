@@ -60,12 +60,15 @@ PUBLIC_CACHE_ENDPOINTS = frozenset(
 _LIMIT_BASE = {}
 
 
-def _fail_on_insecure_secrets(app):
+def _is_production(app):
+    return str(app.config.get("FLASK_ENV", "development")).lower() in {"production", "prod"}
+
+
+def _validate_production_config(app):
+    secret = str(app.config.get("JWT_SECRET_KEY", ""))
     if app.config.get("TESTING"):
         return
-    production = str(app.config.get("FLASK_ENV", "development")).lower() in {"production", "prod"}
-    secret = str(app.config.get("JWT_SECRET_KEY", ""))
-    if production and (USING_GENERATED_SECRET or len(secret) < 32):
+    if _is_production(app) and (USING_GENERATED_SECRET or len(secret) < 32):
         raise RuntimeError(
             "JWT_SECRET_KEY must be explicitly set to at least 32 characters in production."
         )
@@ -76,30 +79,25 @@ def _fail_on_insecure_secrets(app):
         )
 
 
-def create_app(config_object=Config):
-    app = Flask(__name__)
-    app.config.from_object(config_object)
-    app.url_map.strict_slashes = False
-    _fail_on_insecure_secrets(app)
-
+def _configure_cors(app):
     dev_origins = {
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:4173",
         "http://127.0.0.1:4173",
     }
-    production = str(app.config.get("FLASK_ENV", "development")).lower() in {"production", "prod"}
     configured = {str(origin).rstrip("/") for origin in (app.config.get("CORS_ORIGINS") or ())}
     frontend = app.config.get("FRONTEND_URL")
     if frontend:
         configured.add(str(frontend).rstrip("/"))
-    if production:
-        if not configured:
-            raise RuntimeError("CORS_ORIGINS must be explicitly set in production.")
-    else:
+    if _is_production(app) and not configured:
+        raise RuntimeError("CORS_ORIGINS must be explicitly set in production.")
+    if not _is_production(app):
         configured |= dev_origins
     CORS(app, resources={r"/api/*": {"origins": sorted(configured)}}, supports_credentials=False)
 
+
+def _configure_services(app):
     jwt.init_app(app)
     limiter.enabled = bool(app.config.get("RATELIMIT_ENABLED", True))
     limiter.init_app(app)
@@ -110,79 +108,56 @@ def create_app(config_object=Config):
     except database.StorageUnavailable as exc:
         app.logger.warning("Storage unavailable at startup: %s", exc)
 
-    @jwt.token_in_blocklist_loader
-    def token_revoked(_jwt_header, jwt_payload):
-        return token_denylist.is_revoked(jwt_payload.get("jti"))
 
+def _register_blueprints(app):
     for blueprint, prefix in BLUEPRINTS:
         app.register_blueprint(blueprint, url_prefix=prefix)
-
     for endpoint, limit in ROUTE_LIMITS.items():
         if endpoint in app.view_functions:
             base = _LIMIT_BASE.setdefault(endpoint, app.view_functions[endpoint])
             app.view_functions[endpoint] = limiter.limit(limit)(base)
 
+
+def _apply_security_headers(response, app):
+    response.headers.setdefault("X-Request-ID", getattr(g, "request_id", ""))
+    if not app.config.get("SECURITY_HEADERS_ENABLED", True):
+        return response
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
+    )
+    return response
+
+
+def _apply_cache_headers(response, app):
+    if response.status_code != 200 or request.endpoint not in PUBLIC_CACHE_ENDPOINTS:
+        return response
+    visibility = "private" if request.headers.get("Authorization") else "public"
+    ttl = int(app.config.get("CACHE_TTL_SECONDS", 600))
+    response.headers["Cache-Control"] = f"{visibility}, max-age={ttl}"
+    etag = '"' + hashlib.sha256(response.get_data()).hexdigest() + '"'
+    response.headers["ETag"] = etag
+    if request.headers.get("If-None-Match") == etag:
+        response.status_code = 304
+        response.set_data(b"")
+    return response
+
+
+def _register_security_headers(app):
     @app.before_request
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
 
     @app.after_request
     def apply_security_headers(response):
-        response.headers.setdefault("X-Request-ID", getattr(g, "request_id", ""))
-        if app.config.get("SECURITY_HEADERS_ENABLED", True):
-            response.headers.setdefault("X-Content-Type-Options", "nosniff")
-            response.headers.setdefault("X-Frame-Options", "DENY")
-            response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-            response.headers.setdefault(
-                "Content-Security-Policy",
-                "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
-            )
-        if response.status_code == 200 and request.endpoint in PUBLIC_CACHE_ENDPOINTS:
-            visibility = "private" if request.headers.get("Authorization") else "public"
-            ttl = int(app.config.get("CACHE_TTL_SECONDS", 600))
-            response.headers["Cache-Control"] = f"{visibility}, max-age={ttl}"
-            etag = '"' + hashlib.sha256(response.get_data()).hexdigest() + '"'
-            response.headers["ETag"] = etag
-            if request.headers.get("If-None-Match") == etag:
-                response.status_code = 304
-                response.set_data(b"")
-        return response
+        _apply_security_headers(response, app)
+        return _apply_cache_headers(response, app)
 
-    @app.get("/api/health")
-    def health():
-        return jsonify(
-            {
-                "status": "healthy",
-                "service": "AirAware AI API",
-                "storage": database.storage_mode(),
-                "ai": "gemini" if gemini_service.is_enabled() else "not-configured",
-            }
-        )
 
-    @app.get("/api/ready")
-    def ready():
-        checks = {
-            "storage": database.storage_mode() in {"supabase", "memory"},
-            "ai": gemini_service.is_enabled(),
-        }
-        ok = all(checks.values())
-        return jsonify({"ready": ok, "checks": checks}), (200 if ok else 503)
-
-    limiter.exempt(health)
-    limiter.exempt(ready)
-
-    @jwt.unauthorized_loader
-    def missing_token(_reason):
-        return jsonify({"error": "Authentication required."}), 401
-
-    @jwt.invalid_token_loader
-    def invalid_token(_reason):
-        return jsonify({"error": "Your session token is invalid. Please sign in again."}), 401
-
-    @jwt.expired_token_loader
-    def expired_token(_header, _payload):
-        return jsonify({"error": "Your session expired. Please sign in again."}), 401
-
+def _register_http_error_handlers(app):
     @app.errorhandler(404)
     def not_found(_error):
         return jsonify({"error": "Endpoint not found."}), 404
@@ -199,21 +174,42 @@ def create_app(config_object=Config):
             response.headers["Retry-After"] = str(error.retry_after)
         return response
 
+
+def _register_jwt_error_handlers(app):
     @app.errorhandler(JWTExtendedException)
     @app.errorhandler(PyJWTError)
     def jwt_error(_error):
         return jsonify({"error": "Your session token could not be verified."}), 401
 
+    @jwt.unauthorized_loader
+    def missing_token(_reason):
+        return jsonify({"error": "Authentication required."}), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token(_reason):
+        return jsonify({"error": "Your session token is invalid. Please sign in again."}), 401
+
+    @jwt.expired_token_loader
+    def expired_token(_header, _payload):
+        return jsonify({"error": "Your session expired. Please sign in again."}), 401
+
+
+def _request_failure(app, service, message):
+    app.logger.error("%s unavailable (request %s)", service, getattr(g, "request_id", ""))
+    return jsonify({"error": message}), 503
+
+
+def _register_storage_error_handlers(app):
     @app.errorhandler(database.StorageUnavailable)
     def storage_unavailable(_error):
-        app.logger.error("Storage unavailable (request %s)", getattr(g, "request_id", ""))
-        return jsonify({"error": "Data storage is temporarily unavailable."}), 503
+        return _request_failure(app, "Data storage", "Data storage is temporarily unavailable.")
 
     @app.errorhandler(gemini_service.GeminiUnavailable)
     def gemini_unavailable(_error):
-        app.logger.error("Gemini unavailable (request %s)", getattr(g, "request_id", ""))
-        return jsonify({"error": "The AI assistant is temporarily unavailable."}), 503
+        return _request_failure(app, "Gemini", "The AI assistant is temporarily unavailable.")
 
+
+def _register_generic_error_handlers(app):
     @app.errorhandler(500)
     def server_error(_error):
         return jsonify({"error": "Unexpected server error. Please retry."}), 500
@@ -223,6 +219,50 @@ def create_app(config_object=Config):
         logger.exception("Unhandled error (request %s): %s", getattr(g, "request_id", ""), error)
         return jsonify({"error": "Unexpected server error. Please retry."}), 500
 
+
+def _register_error_handlers(app):
+    _register_http_error_handlers(app)
+    _register_jwt_error_handlers(app)
+    _register_storage_error_handlers(app)
+    _register_generic_error_handlers(app)
+
+
+def _register_token_loader():
+    @jwt.token_in_blocklist_loader
+    def token_revoked(_jwt_header, jwt_payload):
+        return token_denylist.is_revoked(jwt_payload.get("jti"))
+
+
+def _register_health(app):
+    @app.get("/api/health")
+    def health():
+        return jsonify({"status": "healthy", "service": "AirAware AI API",
+                        "storage": database.storage_mode(),
+                        "ai": "gemini" if gemini_service.is_enabled() else "not-configured"})
+
+    @app.get("/api/ready")
+    def ready():
+        checks = {"storage": database.storage_mode() in {"supabase", "memory"},
+                  "ai": gemini_service.is_enabled()}
+        ok = all(checks.values())
+        return jsonify({"ready": ok, "checks": checks}), (200 if ok else 503)
+
+    limiter.exempt(health)
+    limiter.exempt(ready)
+
+
+def create_app(config_object=Config):
+    app = Flask(__name__)
+    app.config.from_object(config_object)
+    app.url_map.strict_slashes = False
+    _validate_production_config(app)
+    _configure_cors(app)
+    _configure_services(app)
+    _register_token_loader()
+    _register_blueprints(app)
+    _register_security_headers(app)
+    _register_health(app)
+    _register_error_handlers(app)
     return app
 
 

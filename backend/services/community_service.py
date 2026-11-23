@@ -125,21 +125,21 @@ def _to_dt(value):
 def _date_in_window(date_str, start_dt, end_dt):
     if not date_str:
         return False
-    try:
-        # impact record dates are YYYY-MM-DD
-        if len(str(date_str)) == 10:
-            dt = datetime.fromisoformat(str(date_str)).replace(tzinfo=UTC)
-        else:
-            dt = _to_dt(date_str)
-    except Exception:
-        dt = _to_dt(date_str)
+    dt = _parse_record_date(date_str)
     if dt is None:
         return False
-    if start_dt and dt.date() < start_dt.date():
-        return False
-    if end_dt and dt.date() > end_dt.date():
-        return False
-    return True
+    after_start = not start_dt or dt.date() >= start_dt.date()
+    before_end = not end_dt or dt.date() <= end_dt.date()
+    return after_start and before_end
+
+
+def _parse_record_date(date_str):
+    try:
+        if len(str(date_str)) == 10:
+            return datetime.fromisoformat(str(date_str)).replace(tzinfo=UTC)
+        return _to_dt(date_str)
+    except Exception:
+        return _to_dt(date_str)
 
 
 def _category_matches_record(category, record):
@@ -255,19 +255,65 @@ def stats(user_id):
     }
 
 
+def _challenge_memberships(member_rows, user_id):
+    memberships = {row.get("challenge_id"): row for row in member_rows
+                   if row.get("user_id") == user_id and row.get("challenge_id")}
+    member_ids = defaultdict(set)
+    for row in member_rows:
+        if row.get("user_id") and row.get("challenge_id"):
+            member_ids[row["challenge_id"]].add(row["user_id"])
+    return memberships, member_ids
+
+
+def _challenge_item(challenge, memberships, member_ids_by_challenge, records_by_user, assessments, now):
+    challenge_id = challenge.get("id")
+    member_ids = member_ids_by_challenge.get(challenge_id, set())
+    user_records = [record for uid in member_ids for record in records_by_user.get(uid, ())]
+    start_dt = _to_dt(challenge.get("starts_at"))
+    end_dt = _to_dt(challenge.get("ends_at"))
+    target = float(challenge.get("target_kg") or 0)
+    category = challenge.get("category")
+    progress_kg = round(max(0.0, sum(float(record.get("avoided_kg") or 0) for record in user_records
+                                     if _date_in_window(record.get("date"), start_dt, end_dt)
+                                     and _category_matches_record(category, record))), 2)
+    if target > 0:
+        progress_pct = min(100, round((progress_kg / target) * 100))
+    else:
+        progress_pct, assessments = _indoor_challenge_progress(challenge, member_ids, start_dt, end_dt,
+                                                               user_records, assessments)
+    days_left = max(0, (end_dt.date() - now.date()).days) if isinstance(end_dt, datetime) else None
+    item = {
+        "id": challenge_id, "title": challenge.get("title"), "description": challenge.get("description"),
+        "category": category, "icon": challenge.get("icon"), "target_kg": target,
+        "participants": len(member_ids), "joined": challenge_id in memberships,
+        "ends_at": end_dt.isoformat().replace("+00:00", "Z") if isinstance(end_dt, datetime) else None,
+        "days_left": days_left, "progress_pct": progress_pct, "progress_kg": progress_kg,
+        "active": challenge_id in memberships,
+    }
+    return item, assessments
+
+
+def _indoor_challenge_progress(challenge, member_ids, start_dt, end_dt, user_records, assessments):
+    assessments = assessments if assessments is not None else _load_collection(indoor_assessments)
+    completed = 0
+    for uid in member_ids:
+        checkins = _challenge_checkins(uid, challenge, start_dt, end_dt, user_records, assessments)
+        if checkins:
+            completed += 1
+            try:
+                challenge_members.update_one({"challenge_id": challenge.get("id"), "user_id": uid},
+                                             {"$set": {"completed_logs": checkins}})
+            except Exception:
+                logger.exception("Failed to store challenge check-ins")
+    pct = min(100, round((completed / max(1, len(member_ids))) * 100)) if member_ids else 0
+    return pct, assessments
+
+
 def list_challenges(user_id):
     ensure_seeded()
     now = datetime.now(UTC)
     member_rows = _load_collection(challenge_members)
-    memberships = {
-        row.get("challenge_id"): row
-        for row in member_rows
-        if row.get("user_id") == user_id and row.get("challenge_id")
-    }
-    member_ids_by_challenge = defaultdict(set)
-    for row in member_rows:
-        if row.get("user_id") and row.get("challenge_id"):
-            member_ids_by_challenge[row["challenge_id"]].add(row["user_id"])
+    memberships, member_ids_by_challenge = _challenge_memberships(member_rows, user_id)
 
     challenge_docs = sorted(_load_collection(challenges), key=lambda c: c.get("created_at") or now, reverse=True)
     records_by_user = defaultdict(list)
@@ -278,67 +324,9 @@ def list_challenges(user_id):
 
     items = []
     for challenge in challenge_docs:
-        challenge_id = challenge.get("id")
-        member_ids = member_ids_by_challenge.get(challenge_id, set())
-        user_records = [record for uid in member_ids for record in records_by_user.get(uid, ())]
-        start_dt = _to_dt(challenge.get("starts_at"))
-        end_dt = _to_dt(challenge.get("ends_at"))
-        target = float(challenge.get("target_kg") or 0)
-        category = challenge.get("category")
-
-        progress_kg = round(
-            max(
-                0.0,
-                sum(
-                    float(record.get("avoided_kg") or 0)
-                    for record in user_records
-                    if _date_in_window(record.get("date"), start_dt, end_dt)
-                    and _category_matches_record(category, record)
-                ),
-            ),
-            2,
-        )
-
-        if target > 0:
-            progress_pct = min(100, round((progress_kg / target) * 100))
-        else:
-            if assessments is None:
-                assessments = _load_collection(indoor_assessments)
-            completed_members = 0
-            for uid in member_ids:
-                checkins = _challenge_checkins(uid, challenge, start_dt, end_dt, user_records, assessments)
-                if checkins > 0:
-                    completed_members += 1
-                    try:
-                        challenge_members.update_one(
-                            {"challenge_id": challenge_id, "user_id": uid},
-                            {"$set": {"completed_logs": checkins}},
-                        )
-                    except Exception:
-                        logger.exception("Failed to store challenge check-ins")
-            progress_pct = min(100, round((completed_members / max(1, len(member_ids))) * 100)) if member_ids else 0
-
-        days_left = None
-        if isinstance(end_dt, datetime):
-            days_left = max(0, (end_dt.date() - now.date()).days)
-
-        items.append(
-            {
-                "id": challenge_id,
-                "title": challenge.get("title"),
-                "description": challenge.get("description"),
-                "category": category,
-                "icon": challenge.get("icon"),
-                "target_kg": target,
-                "participants": len(member_ids),
-                "joined": challenge_id in memberships,
-                "ends_at": end_dt.isoformat().replace("+00:00", "Z") if isinstance(end_dt, datetime) else None,
-                "days_left": days_left,
-                "progress_pct": progress_pct,
-                "progress_kg": progress_kg,
-                "active": bool(challenge_id in memberships),
-            }
-        )
+        item, assessments = _challenge_item(challenge, memberships, member_ids_by_challenge,
+                                            records_by_user, assessments, now)
+        items.append(item)
     return {"challenges": items}
 
 

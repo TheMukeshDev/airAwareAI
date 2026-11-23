@@ -3,7 +3,7 @@
 from flask import Blueprint, jsonify, request
 
 from extensions import find_user, lifestyle_profiles, users
-from routes.profile import _clean_lifestyle
+from routes.profile import _clean_lifestyle, validate_lifestyle_payload
 from services.impact_calculator import FACTOR_VERSION, monthly_footprint, normalize_profile
 from utils.http import error, now_utc, require_auth
 from utils.validation import ensure_json_object
@@ -42,31 +42,25 @@ def get_lifestyle(user_id):
     )
 
 
-@lifestyle_bp.post("/lifestyle")
-@require_auth
-def save_lifestyle(user_id):
-    data = request.get_json(silent=True)
-    data, failure = ensure_json_object(data)
-    if failure:
-        return failure
-    user = find_user(user_id)
-    if not user:
-        return error("Profile not found.", 404)
-
+def _clean_lifestyle_payload(user, data):
     incoming = data.get("lifestyle") if isinstance(data.get("lifestyle"), dict) else data
     if not isinstance(incoming, dict):
-        return error("Lifestyle payload must be a JSON object.", 422)
+        return None, error("Lifestyle payload must be a JSON object.", 422)
+    base_normalized = normalize_profile(_stored_profile(user))["flat"]
+    return _clean_lifestyle(incoming, base_normalized), None
 
-    stored = _stored_profile(user)
-    base_normalized = normalize_profile(stored)["flat"]
-    merged = dict(base_normalized)
-    # overlay only keys explicitly supplied by client
-    for key, value in incoming.items():
-        merged[key] = value
-        if isinstance(value, dict):
-            merged[key] = value
-    # _clean_lifestyle applies normalization/default bounds from merged input onto base
-    cleaned = _clean_lifestyle(incoming, base_normalized)
+
+def _validate_lifestyle_request(data):
+    failure = validate_lifestyle_payload(data)
+    if failure:
+        return failure
+    incoming = data.get("lifestyle") if isinstance(data.get("lifestyle"), dict) else data
+    if incoming is not data:
+        return validate_lifestyle_payload(incoming)
+    return None
+
+
+def _persist_lifestyle(user_id, cleaned):
     try:
         lifestyle_profiles.update_one(
             {"user_id": user_id},
@@ -77,6 +71,10 @@ def save_lifestyle(user_id):
     except Exception:
         logger.exception("Failed to save lifestyle")
         return error("Could not save lifestyle profile.", 503)
+    return None
+
+
+def _lifestyle_response(cleaned):
     normalized = normalize_profile(cleaned)
     return jsonify(
         {
@@ -87,6 +85,28 @@ def save_lifestyle(user_id):
     )
 
 
+@lifestyle_bp.post("/lifestyle")
+@require_auth
+def save_lifestyle(user_id):
+    data = request.get_json(silent=True)
+    data, failure = ensure_json_object(data)
+    if failure:
+        return failure
+    failure = _validate_lifestyle_request(data)
+    if failure:
+        return failure
+    user = find_user(user_id)
+    if not user:
+        return error("Profile not found.", 404)
+    cleaned, failure = _clean_lifestyle_payload(user, data)
+    if failure:
+        return failure
+    failure = _persist_lifestyle(user_id, cleaned)
+    if failure:
+        return failure
+    return _lifestyle_response(cleaned)
+
+
 @lifestyle_bp.post("/lifestyle/analyze")
 @require_auth
 def analyze_lifestyle(user_id):
@@ -94,6 +114,9 @@ def analyze_lifestyle(user_id):
     if data is None:
         data = {}
     data, failure = ensure_json_object(data)
+    if failure:
+        return failure
+    failure = _validate_lifestyle_request(data)
     if failure:
         return failure
     user = find_user(user_id)

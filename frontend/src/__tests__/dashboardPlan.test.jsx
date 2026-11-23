@@ -38,7 +38,7 @@ vi.mock("../components/charts/Charts", () => ({
   Sparkline: () => <div>Chart</div>,
 }));
 
-import { Dashboard } from "../pages/Dashboard";
+import Dashboard from "../pages/Dashboard";
 import { planApi } from "../services/api";
 
 describe("Dashboard daily plan", () => {

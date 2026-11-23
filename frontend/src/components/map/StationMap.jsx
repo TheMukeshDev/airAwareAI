@@ -8,7 +8,6 @@ import { DEFAULT_COORDS } from "../../lib/constants";
 const TILE_URL = "/api/map/tiles/dark_all/{z}/{x}/{y}.png";
 
 function Recenter({ center }) {
-
   const map = useMap();
   useEffect(() => {
     if (center?.latitude && center?.longitude) {
@@ -19,9 +18,23 @@ function Recenter({ center }) {
   return null;
 }
 
+function stationSummary(station, scale) {
+  const category = classifyAqi(station.aqi, station.scale ?? scale ?? "us");
+  return `${station.name}: AQI ${station.aqi ?? "unavailable"}, ${category.label}`;
+}
+
 export function StationMap({ center, stations = [], height = 380, activeId, onSelect, label = "Air quality map" }) {
   const lat = center?.latitude ?? DEFAULT_COORDS.latitude;
   const lng = center?.longitude ?? DEFAULT_COORDS.longitude;
+  const selected = stations.find((station) => station.id === activeId);
+
+  const selectOnKey = (station) => (event) => {
+    const key = event?.originalEvent?.key;
+    if (key !== "Enter" && key !== " " && key !== "Spacebar") return;
+    event.originalEvent?.preventDefault?.();
+    event.originalEvent?.stopPropagation?.();
+    onSelect?.(station);
+  };
 
   return (
     <div
@@ -29,6 +42,7 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
       style={{ height }}
       role="region"
       aria-label={`${label}. Use the station list below for detailed readings.`}
+      tabIndex={0}
     >
       <MapContainer
         center={[lat, lng]}
@@ -39,7 +53,6 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
       >
         <TileLayer
           url={TILE_URL}
-
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
           maxZoom={19}
         />
@@ -47,6 +60,7 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
         {stations.map((station) => {
           const category = classifyAqi(station.aqi, station.scale ?? "us");
           const active = station.id === activeId;
+          const name = station.name ?? "Unnamed grid point";
           return (
             <CircleMarker
               key={station.id ?? `${station.latitude}-${station.longitude}`}
@@ -57,12 +71,17 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
                 fillColor: category.style.hex,
                 fillOpacity: active ? 0.55 : 0.3,
                 weight: active ? 3 : 2,
+                keyboard: true,
+                interactive: true,
               }}
-              eventHandlers={{ click: () => onSelect?.(station) }}
+              eventHandlers={{
+                click: () => onSelect?.(station),
+                keydown: selectOnKey(station),
+              }}
             >
               <Popup>
                 <div className="min-w-[150px]">
-                  <p className="text-[12.5px] font-semibold text-white">{station.name}</p>
+                  <p className="text-[12.5px] font-semibold text-white">{name}</p>
                   <p className="mt-1 text-[12px] text-slate-300">
                     AQI {station.aqi ?? "—"} · {category.label}
                   </p>
@@ -77,13 +96,29 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
         <CircleMarker
           center={[lat, lng]}
           radius={5}
-          pathOptions={{ color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 0.9, weight: 2 }}
+          pathOptions={{ color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 0.9, weight: 2, keyboard: true }}
         >
           <Popup>
             <span className="text-[12px] text-slate-200">Your selected location</span>
           </Popup>
         </CircleMarker>
       </MapContainer>
+      <p className="sr-only">
+        Interactive map. Use the nearby reference point list below to select a station; map markers are also selectable
+        with a pointer.
+      </p>
+      {stations.length ? (
+        <ul className="sr-only">
+          {stations.map((station) => (
+            <li key={station.id ?? `${station.latitude}-${station.longitude}`}>{stationSummary(station)}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="sr-only">No grid points are available for this location.</p>
+      )}
+      <p role="status" aria-live="polite" className="sr-only">
+        {selected ? `Selected ${stationSummary(selected)}` : "No grid point selected."}
+      </p>
     </div>
   );
 }
