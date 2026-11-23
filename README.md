@@ -10,7 +10,7 @@ Backend: Flask + Supabase Postgres + Open-Meteo + Gemini
 - App: https://airaware-ai-sigma.vercel.app
 - API health: https://airaware-ai-sigma.vercel.app/api/health
 - Repository: https://github.com/TheMukeshDev/airAwareAI
-- Vercel Services deploys the Vite frontend and Flask backend from this monorepo; `/api/*` routes to the backend and all other routes to the frontend.
+- Vercel Services deploys the Vite frontend and Flask backend from this monorepo; `/api/*` routes to the backend and all other routes to the frontend. The Vercel project is connected to this GitHub repository, so pushes to `master` trigger a new production deployment.
 
 ## Evaluator walkthrough
 
