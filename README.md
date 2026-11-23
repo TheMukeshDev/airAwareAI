@@ -40,6 +40,16 @@ See `docs/data-and-limitations.md`, `docs/problem-alignment.md` and `docs/submis
 - Repository: https://github.com/TheMukeshDev/airAwareAI
 - Vercel Services deploys the Vite frontend and Flask backend from this monorepo; `/api/*` routes to the backend and all other routes to the frontend. The Vercel project is connected to this GitHub repository, so pushes to `master` trigger a new production deployment.
 
+## Challenge submission
+
+- **Challenge:** [Challenge 6] Urban Air Quality Assistant
+- **Public GitHub repository:** https://github.com/TheMukeshDev/airAwareAI
+- **Deployed app:** https://airaware-ai-sigma.vercel.app/
+- **Demo video:** https://drive.google.com/file/d/1UBJfqxK98T6qnUIR-wvZQTPEAfkKPj5O/view?usp=drivesdk
+- **LinkedIn post:** https://www.linkedin.com/posts/themukeshdev_buildwithai-promptwarsvirtual-challenge6-ugcPost-7530514418300858368-WeM3/
+- **Recorded AI evaluation score:** 95.51/100 (previous attempt)
+- **Current local projection after these fixes:** 100/100 (official re-run pending)
+
 ## Evaluator walkthrough
 
 No demo user is seeded. Create an account on the Register screen (or with `POST /api/auth/register`), then complete the four-step onboarding before opening the dashboard.
@@ -182,12 +192,13 @@ All except auth, public air quality endpoints, map tiles and health checks requi
 
 ## Submission field checklist
 
-- **Deployed app URL:** https://airaware-ai-sigma.vercel.app
+- **Challenge:** [Challenge 6] Urban Air Quality Assistant
+- **Deployed app URL:** https://airaware-ai-sigma.vercel.app/
 - **GitHub repository URL:** https://github.com/TheMukeshDev/airAwareAI
-- **Changes/updates:** use the concise answer in `docs/submission-answers.md`.
-- **Generative AI services used:** Google Gemini via the backend; see `docs/submission-answers.md` for the full answer.
-- **Submission demo video:** not included in this repository.
-- **LinkedIn post:** not included in this repository.
+- **Project demo video:** https://drive.google.com/file/d/1UBJfqxK98T6qnUIR-wvZQTPEAfkKPj5O/view?usp=drivesdk
+- **LinkedIn post:** https://www.linkedin.com/posts/themukeshdev_buildwithai-promptwarsvirtual-challenge6-ugcPost-7530514418300858368-WeM3/
+- **Changes/updates:** refactored the full-stack monorepo (React 19 + Vite frontend, Flask backend on Vercel with Supabase Postgres) for SOLID modularity, security, accessibility and full backend coverage. McCabe cyclomatic complexity is `<= 6` across all backend modules with 0 Ruff C901 warnings; Protocol-based providers and rule tables are extracted; all 10 React pages are split into modular subcomponents under 180 lines; `backend/db.py` is now a `backend/db/` package. Live US AQI and computed Indian CPCB sub-indices are paired with schema-validated Gemini JSON that fails closed with `503` rather than inventing data. Profile deletion confirmation, strict input validation, security audit logging, 0 Bandit findings and WCAG/ARIA landmarks on charts and maps are included. Tests: 180 backend tests (100% statements, 99.91% branches) and 104 frontend tests (94.75% lines, 14 axe checks).
+- **Generative AI services used:** Google Gemini API (`gemini-2.5-flash` by default, configured through `GEMINI_MODEL` in the Flask backend). It is used by the grounded environmental assistant (`POST /api/assistant/chat`, `backend/routes/assistant.py`, `backend/services/gemini_service.py`) for user questions about local air quality, pollutant risks and mitigation steps from a compact live-reading/profile context with schema-validated JSON and explicit sources; by exposure-aware daily-plan summaries (`POST /api/daily-plan/generate`, `backend/routes/daily_plan.py`, `backend/services/recommendation_engine.py`) for personalized actions, outdoor windows and safety guidance from AQI forecasts and commute/household inputs; and by optional indoor-air wording. Gemini is required for chat and daily-plan wording; missing key or provider failure returns `503` rather than fabricated or rule-based placeholder text.
 - **Notes for evaluators:** no seeded demo user; follow the walkthrough steps above.
 - **Before submitting:** confirm both workflows are green, keep all keys in hosting-provider environment settings, and confirm `backend/.env.example` and `frontend/.env.example` remain trackable.
 
@@ -197,7 +208,7 @@ All except auth, public air quality endpoints, map tiles and health checks requi
 backend/
   app.py              app factory, CORS, JWT and error handlers
   config.py           environment configuration
-  db.py               Supabase Postgres collection adapter and test store
+  db/                 Supabase Postgres collection adapter and test store
   extensions.py       JWT, rate limiter, token denylist, collections, password hashing
   routes/             one blueprint per feature, including the CARTO tile proxy
   services/           air quality, footprint, planner, indoor, assistant, community

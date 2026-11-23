@@ -37,7 +37,7 @@ Run commands from the repository root unless a step says otherwise.
 | UX, responsiveness and accessibility | Shared components in `frontend/src/components/common/` and `frontend/src/components/layout/`; axe checks in `frontend/src/__tests__/a11y.test.jsx`; responsive CSS in `frontend/src/index.css`. | `cd frontend; npm run test:a11y` | Automated checks are not a substitute for manual keyboard/screen-reader review. |
 | Testing and CI quality | `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `backend/pyproject.toml`, `backend/bandit.yaml`, `frontend/package-lock.json`. | `python -c "import pathlib, yaml; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in pathlib.Path('.github/workflows').glob('*.yml')]; print('workflow YAML OK')"` | CI has not been run on GitHub from this workspace. |
 | Deployment readiness | `vercel.json`, live URL and setup notes in `README.md`, `/api/health` in `backend/app.py`. | Open `https://airaware-ai-sigma.vercel.app/api/health` from `README.md`. | Live service state is external to the repository. |
-| Documentation and submission completeness | `README.md`, this file, `docs/data-and-limitations.md`, `docs/submission-answers.md`, `LICENSE` (MIT). | `git status --short`; `git check-ignore --no-index -v .env.example backend/.env.example frontend/.env.example` (no output means trackable). | GitHub is linked from the README; no demo/video or LinkedIn URL is stored in this repository. |
+| Documentation and submission completeness | `README.md`, this file, `docs/data-and-limitations.md`, `docs/submission-answers.md`, `LICENSE` (MIT). | `git status --short`; `git check-ignore --no-index -v .env.example backend/.env.example frontend/.env.example` (no output means trackable). | GitHub, deployed app, demo-video and LinkedIn URLs are recorded in the README and `docs/submission-answers.md`. |
 | Creativity and presentation | Combined air-exposure and carbon planning flow, grounded assistant, server-side tile proxy and honesty labelling across `frontend/src/pages/` and backend services. | Follow the evaluator walkthrough in `README.md`. | No recorded demo or screenshot set is committed. |
 
 ## Consolidated known limitations
@@ -51,4 +51,4 @@ Run commands from the repository root unless a step says otherwise.
 - The map key is server-side only; the proxy depends on CARTO availability and may return `502`.
 - CI workflows are syntax-checked locally, but their GitHub runs were not observed while writing this document.
 - Gitleaks is pinned to an action commit SHA; organization-owned repositories may need the `GITLEAKS_LICENSE` encrypted secret.
-- GitHub is linked from the README; no demo/video or LinkedIn URL is stored in this repository.
+- GitHub, deployed app, demo-video and LinkedIn URLs are recorded in the README and `docs/submission-answers.md`.
