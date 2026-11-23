@@ -5,6 +5,34 @@ Environmental intelligence for Indian cities: live air quality, exposure-aware d
 Frontend: React 19 + Vite + Tailwind v4 + React Router 7 + Recharts + Leaflet
 Backend: Flask + Supabase Postgres + Open-Meteo + Gemini
 
+## Chosen Vertical
+
+AirAware AI targets environmental intelligence for Indian cities. The product combines live CAMS-based air quality, an explicitly computed Indian AQI, exposure-aware daily planning, indoor air guidance, personal carbon tracking and a grounded assistant in one authenticated web app. It is framed for Indian locations, with Prayagraj as the default example, while accepting any latitude and longitude.
+
+## Approach & Logic
+
+The backend is a Flask app factory exposing feature blueprints over a Supabase Postgres document store. Air quality, weather and map tiles are fetched server-side from allow-listed providers and cached with TTL plus stale fallback. Pollutant concentrations, CPCB sub-index breakpoints and versioned Indian emission factors are computed in Python; Gemini is used only for grounded language generation and never as a numeric source. Every generated answer carries source metadata, and generated numeric tokens are checked against computed context before acceptance. The frontend is a React SPA with shared components, hooks and feature subcomponents for each screen.
+
+## How the Solution Works
+
+1. The user registers, completes onboarding and receives a JWT stored by the frontend auth provider.
+2. The dashboard requests current air and weather data; `aqi_service.py` returns US AQI, computed Indian AQI, pollutant concentrations, forecast, ventilation window and nearby CAMS grid readings.
+3. Lifestyle and Impact inputs are converted to CO2e with `emission_factors_v1.json`; Daily Plan combines computed exposure windows with Gemini-rewritten actions.
+4. Indoor Air scores a questionnaire and optionally adds Gemini wording; Assistant answers from a compact current-air/profile context with sources.
+5. Community returns aggregates and an opt-in leaderboard; Settings controls scale, location, notifications and privacy.
+6. `/api/health` and `/api/ready` expose liveness and dependency readiness for deployment monitoring.
+
+## Assumptions & Limitations
+
+- Air quality is modelled CAMS grid data, not street-level monitoring; Indian AQI is a CPCB-style computed estimate, not an official bulletin.
+- Emission factors are a versioned baseline `v1` dataset calibrated for Indian activity, and all impact records are unverified estimates, not regulatory figures.
+- Gemini is required for chat and daily-plan wording; missing configuration or provider failure returns `503` rather than an invented fallback.
+- There is no seeded demo user or sample community data; evaluators must register.
+- Automated axe checks cover rendered jsdom states only; they are not a full manual WCAG audit.
+- Rate-limit and revocation state fall back to process-local memory if Supabase is unavailable, and the map proxy depends on CARTO availability.
+
+See `docs/data-and-limitations.md`, `docs/problem-alignment.md` and `docs/submission-answers.md` for the full mapping and evidence commands.
+
 ## Live deployment
 
 - App: https://airaware-ai-sigma.vercel.app
@@ -28,8 +56,6 @@ Suggested path for an evaluator:
 8. Assistant: ask a grounded question and check the returned sources.
 9. Community: view aggregate stats, join a challenge and open the opt-in leaderboard.
 10. Settings: change AQI scale, location, notifications and privacy controls.
-
-Submission demo video link: must be supplied before submission. No demo video URL is fabricated in this repository.
 
 ## What is inside
 
@@ -160,8 +186,8 @@ All except auth, public air quality endpoints, map tiles and health checks requi
 - **GitHub repository URL:** https://github.com/TheMukeshDev/airAwareAI
 - **Changes/updates:** use the concise answer in `docs/submission-answers.md`.
 - **Generative AI services used:** Google Gemini via the backend; see `docs/submission-answers.md` for the full answer.
-- **Submission demo video:** a link must be supplied before submission.
-- **LinkedIn post:** a link must be supplied before submission.
+- **Submission demo video:** not included in this repository.
+- **LinkedIn post:** not included in this repository.
 - **Notes for evaluators:** no seeded demo user; follow the walkthrough steps above.
 - **Before submitting:** confirm both workflows are green, keep all keys in hosting-provider environment settings, and confirm `backend/.env.example` and `frontend/.env.example` remain trackable.
 

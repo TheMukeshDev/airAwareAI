@@ -85,7 +85,7 @@ export function GreenChallengesCard({ challengeState, onJoined, busyId }) {
             </div>
           ))
         ) : (
-          <p className="py-6 text-center text-[12px] text-slate-400">No challenges are open right now.</p>
+          <p role="status" className="py-6 text-center text-[12px] text-slate-400">No challenges are open right now.</p>
         )}
       </div>
     </Card>

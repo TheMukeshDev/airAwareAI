@@ -7,7 +7,7 @@ from extensions import conversations, find_user
 from services import gemini_service
 from services.air_lookup import air_for_user
 from utils.http import error, now_utc, require_auth
-from utils.validation import bounded_text, ensure_json_object, reject_unknown_keys
+from utils.validation import ensure_json_object, reject_unknown_keys, sanitize_prompt_text
 
 assistant_bp = Blueprint("assistant", __name__)
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def _chat_message():
     failure = reject_unknown_keys(data, {"message"}, "assistant chat")
     if failure:
         return None, failure
-    message, failure = bounded_text(data.get("message"), "message", 2000, allow_empty=False)
+    message, failure = sanitize_prompt_text(data.get("message"), "message", 2000, allow_empty=False)
     if failure and not data.get("message"):
         return None, error("Type a question first.", 422)
     return message, failure

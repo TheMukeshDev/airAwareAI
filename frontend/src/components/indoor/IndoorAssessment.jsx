@@ -15,7 +15,7 @@ export function IndoorAssessment({ assessment, loading }) {
   if (loading) return <LoadingBlock label="Assessing your home" />;
   if (!assessment) {
     return (
-      <Card>
+      <Card role="status">
         <CardTitle as="h2">No assessment yet</CardTitle>
         <CardDescription>
           Complete the two steps and AirAware will prioritise actions for your home — starting with the cheapest and most

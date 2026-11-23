@@ -18,7 +18,7 @@ from extensions import (
 from routes.auth import DEFAULT_PREFERENCES, serialize_user
 from services.impact_calculator import normalize_profile
 from utils.audit import audit_event
-from utils.http import error, now_utc, require_auth, valid_email
+from utils.http import error, now_utc, require_auth, require_sensitive_confirmation, valid_email
 from utils.validation import (
     bounded_number,
     bounded_text,
@@ -538,6 +538,7 @@ def _prepare_profile_update(user_id):
 
 @profile_bp.put("/profile")
 @require_auth
+@require_sensitive_confirmation(event_type="profile_update", max_body_bytes=16384)
 def update_profile(user_id):
     data, user, failure = _prepare_profile_update(user_id)
     if failure:
@@ -581,6 +582,7 @@ def complete_onboarding(user_id):
 
 @profile_bp.delete("/profile")
 @require_auth
+@require_sensitive_confirmation(event_type="account_deletion", max_body_bytes=4096)
 def delete_profile(user_id):
     user = find_user(user_id)
     if not user:

@@ -1,6 +1,6 @@
 # Ready-to-paste submission answers
 
-Submission-link policy: the GitHub repository URL is taken from the README. The demo/video and LinkedIn URLs are user-supplied; supply them before submission. No link is fabricated or inferred here.
+Submission-link policy: the GitHub repository URL is taken from the README. No demo/video or LinkedIn URL is stored or inferred in this repository.
 
 ## Deployed link
 
@@ -22,11 +22,11 @@ https://github.com/TheMukeshDev/airAwareAI
 
 ## Video / demo URL
 
-Supply the unlisted walkthrough or demo link before submission. No demo URL is fabricated in this repository.
+No demo URL is stored in this repository.
 
 ## LinkedIn post URL
 
-Supply the LinkedIn post URL before submission. No post URL is fabricated in this repository.
+No post URL is stored in this repository.
 
 ## Notes for evaluators
 

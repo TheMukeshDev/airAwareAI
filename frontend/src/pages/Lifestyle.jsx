@@ -35,7 +35,7 @@ export default function Lifestyle() {
           ) : result ? (
             <LifestyleAnalysis analysis={result} />
           ) : (
-            <Card>
+            <Card role="status">
               <CardTitle as="h2">No analysis yet</CardTitle>
               <CardDescription>
                 Fill in the form and run the analysis. AirAware calculates each category from documented factors — the

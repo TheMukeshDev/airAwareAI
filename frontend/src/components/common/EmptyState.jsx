@@ -5,6 +5,7 @@ import { Button } from "./Button";
 export function EmptyState({ icon: Icon = Inbox, title, description, action, className }) {
   return (
     <div
+      role="status"
       className={cn(
         "flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/12 bg-white/[0.02] px-6 py-12 text-center",
         className,

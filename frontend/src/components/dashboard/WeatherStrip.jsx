@@ -12,7 +12,7 @@ const items = [
 export function WeatherStrip({ weather, className }) {
   if (!weather) {
     return (
-      <div className={cn("surface-muted px-4 py-3 text-[12px] text-slate-400", className)}>
+      <div role="status" className={cn("surface-muted px-4 py-3 text-[12px] text-slate-400", className)}>
         Weather data unavailable.
       </div>
     );

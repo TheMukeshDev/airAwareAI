@@ -93,7 +93,7 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
 
       <div className="relative mt-3 flex flex-col items-center">
         {error ? (
-          <div className="flex flex-col items-center py-6 text-center">
+          <div role="alert" className="flex flex-col items-center py-6 text-center">
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/5 text-slate-400">
               <Info size={18} aria-hidden="true" />
             </span>

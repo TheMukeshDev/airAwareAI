@@ -1,5 +1,9 @@
-﻿import json
+﻿from __future__ import annotations
+
+import json
 import logging
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -73,7 +77,7 @@ def _config_value(config, name, default):
     return getattr(config, name, default)
 
 
-def configure(config_object):
+def _configure(config_object):
     global _client, _client_failed, _runtime
     api_key = str(_config_value(config_object, "GEMINI_API_KEY", "")).strip()
     model = str(_config_value(config_object, "GEMINI_MODEL", "gemini-2.5-flash")).strip()
@@ -86,11 +90,11 @@ def configure(config_object):
     _client_failed = False
 
 
-def is_enabled():
+def _is_enabled():
     return bool(_runtime["api_key"]) and not _client_failed
 
 
-def _get_client():
+def _client_factory():
     global _client, _client_failed
     if _client is not None:
         return _client
@@ -164,7 +168,7 @@ def _generate_json(prompt, schema_model):
         return None
 
 
-def enhance_plan(context, actions, profile, user_name=None):
+def _enhance_plan(context, actions, profile, user_name=None):
     if not is_enabled():
         return None
     candidate_ids = {str(action.get("id")) for action in actions or [] if action.get("id")}
@@ -194,7 +198,7 @@ def enhance_plan(context, actions, profile, user_name=None):
     return result
 
 
-def enhance_indoor(answers, score, fixes, outdoor_aqi):
+def _enhance_indoor(answers, score, fixes, outdoor_aqi):
     if not is_enabled():
         return None
     prompt = (
@@ -253,7 +257,7 @@ def _chat_result(response, air):
             "generated_by": "gemini"}
 
 
-def chat(message, air=None, history=None, profile_summary=None):
+def _chat(message, air=None, history=None, profile_summary=None):
     client = _get_client()
     context = _context_block(air, profile_summary)
     if client is None:
@@ -312,3 +316,139 @@ def _sources(air):
         }
     )
     return sources
+
+class AssistantServiceProtocol(Protocol):
+    """Contract for the Gemini-backed environmental assistant."""
+
+    def chat(
+        self,
+        message: str,
+        air: Mapping[str, Any] | None = None,
+        history: Sequence[Mapping[str, Any]] | None = None,
+        profile_summary: str | None = None,
+    ) -> dict[str, Any]: ...
+
+    def enhance_plan(
+        self,
+        context: Mapping[str, Any],
+        actions: Sequence[Mapping[str, Any]],
+        profile: Mapping[str, Any] | None,
+        user_name: str | None = None,
+    ) -> dict[str, Any] | None: ...
+
+    def enhance_indoor(
+        self,
+        answers: Mapping[str, Any],
+        score: int,
+        fixes: Sequence[str],
+        outdoor_aqi: int | float | None,
+    ) -> dict[str, Any] | None: ...
+
+
+class GeminiAssistantService:
+    """Gemini implementation of the assistant contract."""
+
+    def configure(self, config_object: Any) -> None:
+        """Apply Gemini runtime settings from a config object or mapping."""
+        _configure(config_object)
+
+    def is_enabled(self) -> bool:
+        """Return whether Gemini is configured and not permanently failed."""
+        return _is_enabled()
+
+    def get_client(self):
+        """Return a cached Gemini client, or ``None`` when unavailable."""
+        return _client_factory()
+
+
+    def generate_json(self, prompt: str, schema_model: type[BaseModel]) -> dict[str, Any] | None:
+        """Generate structured JSON matching a Pydantic response schema."""
+        return _generate_json(prompt, schema_model)
+
+    def json_data(self, value: Any) -> str:
+        """Serialize untrusted context data for a prompt."""
+        return _json_data(value)
+
+    def context_block(
+        self,
+        air: Mapping[str, Any] | None,
+        profile_summary: str | None = None,
+        extra: str | None = None,
+    ) -> str:
+        """Build the labelled context block sent with chat prompts."""
+        return _context_block(air, profile_summary, extra)
+
+    def chat_contents(self, types, history, context: str, message: str) -> list[Any]:
+        """Build the Gemini content list from history, context, and question."""
+        return _chat_contents(types, history, context, message)
+
+    def chat_result(self, response, air: Mapping[str, Any] | None) -> dict[str, Any]:
+        """Normalize a Gemini response into the assistant payload."""
+        return _chat_result(response, air)
+
+    def sources(self, air: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+        """Return source links appropriate for the current air payload."""
+        return _sources(air)
+
+    def enhance_plan(
+        self,
+        context: Mapping[str, Any],
+        actions: Sequence[Mapping[str, Any]],
+        profile: Mapping[str, Any] | None,
+        user_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return Gemini wording improvements for a daily plan."""
+        return _enhance_plan(context, actions, profile, user_name)
+
+    def enhance_indoor(
+        self,
+        answers: Mapping[str, Any],
+        score: int,
+        fixes: Sequence[str],
+        outdoor_aqi: int | float | None,
+    ) -> dict[str, Any] | None:
+        """Return Gemini wording improvements for an indoor assessment."""
+        return _enhance_indoor(answers, score, fixes, outdoor_aqi)
+
+    def chat(
+        self,
+        message: str,
+        air: Mapping[str, Any] | None = None,
+        history: Sequence[Mapping[str, Any]] | None = None,
+        profile_summary: str | None = None,
+    ) -> dict[str, Any]:
+        """Answer an air-quality question using the supplied session context."""
+        return _chat(message, air, history, profile_summary)
+
+
+_assistant = GeminiAssistantService()
+
+
+def configure(config_object):
+    """Module-level wrapper for :meth:`GeminiAssistantService.configure`."""
+    return _assistant.configure(config_object)
+
+
+def is_enabled():
+    """Module-level wrapper for :meth:`GeminiAssistantService.is_enabled`."""
+    return _assistant.is_enabled()
+
+
+def _get_client():
+    """Module-level wrapper for :meth:`GeminiAssistantService.get_client`."""
+    return _assistant.get_client()
+
+
+def enhance_plan(context, actions, profile, user_name=None):
+    """Module-level wrapper for :meth:`GeminiAssistantService.enhance_plan`."""
+    return _assistant.enhance_plan(context, actions, profile, user_name)
+
+
+def enhance_indoor(answers, score, fixes, outdoor_aqi):
+    """Module-level wrapper for :meth:`GeminiAssistantService.enhance_indoor`."""
+    return _assistant.enhance_indoor(answers, score, fixes, outdoor_aqi)
+
+
+def chat(message, air=None, history=None, profile_summary=None):
+    """Module-level wrapper for :meth:`GeminiAssistantService.chat`."""
+    return _assistant.chat(message, air, history, profile_summary)

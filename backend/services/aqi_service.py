@@ -1,10 +1,14 @@
-﻿import json
+﻿from __future__ import annotations
+
+import json
 import logging
 import math
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any, Protocol
 from urllib.parse import urlparse
 
 import requests
@@ -236,7 +240,7 @@ def _safe(value):
         return None
 
 
-def fetch_air(latitude, longitude):
+def _fetch_air(latitude, longitude):
     params = {
         "latitude": latitude,
         "longitude": longitude,
@@ -249,7 +253,7 @@ def fetch_air(latitude, longitude):
     return _get(Config.OPEN_METEO_AIR_URL, params)
 
 
-def fetch_weather(latitude, longitude):
+def _fetch_weather(latitude, longitude):
     params = {
         "latitude": latitude,
         "longitude": longitude,
@@ -460,7 +464,7 @@ def _build_current_payload(data, weather, stale, hit, key, latitude, longitude, 
     }
 
 
-def get_current(latitude, longitude, location_label=None, city=None, state=None):
+def _get_current(latitude, longitude, location_label=None, city=None, state=None):
     data, stale, hit, key = _air_fetch_with_cache(latitude, longitude)
     weather, _w_stale = _weather_fetch_with_cache(latitude, longitude)
     return _build_current_payload(data, weather, stale, hit, key, latitude, longitude, location_label, city, state)
@@ -560,7 +564,7 @@ def _max_bucket_value(current, value):
     return max(current or 0, value) if value is not None else current
 
 
-def get_forecast(latitude, longitude, hours=48):
+def _get_forecast(latitude, longitude, hours=48):
     data, stale, hit, key = _air_fetch_with_cache(latitude, longitude)
     hourly_raw = (data or {}).get("hourly") or {}
     times = hourly_raw.get("time") or []
@@ -597,7 +601,7 @@ def _distance_km(lat1, lng1, lat2, lng2):
     return round(2 * radius * math.asin(math.sqrt(a)), 1)
 
 
-def get_stations(latitude, longitude):
+def _get_stations(latitude, longitude):
     offsets = [
         (0.0, 0.0, "Centre"),
         (0.13, 0.0, "North"),
@@ -663,3 +667,106 @@ def get_stations(latitude, longitude):
         "cache": {"hit": hit, "age_seconds": _cache_age(key)},
         "notes": [MODEL_GRID_NOTE],
     }
+
+class AirProviderProtocol(Protocol):
+    """Contract for an air-quality data provider."""
+
+    def fetch_air(self, latitude: float, longitude: float) -> dict[str, Any]: ...
+
+    def fetch_weather(self, latitude: float, longitude: float) -> dict[str, Any]: ...
+
+    def get_current(
+        self,
+        latitude: float,
+        longitude: float,
+        location_label: str | None = None,
+        city: str | None = None,
+        state: str | None = None,
+    ) -> dict[str, Any]: ...
+
+    def get_forecast(self, latitude: float, longitude: float, hours: int = 48) -> dict[str, Any]: ...
+
+    def get_stations(self, latitude: float, longitude: float) -> dict[str, Any]: ...
+
+
+class OpenMeteoAirProvider:
+    """Open-Meteo implementation of the air-quality provider contract."""
+
+    def fetch_json(self, url: str, params: Mapping[str, Any], timeout: int = 8) -> dict[str, Any]:
+        """Fetch a allow-listed provider response as JSON."""
+        return _get(url, params, timeout)
+
+    def location_key(self, latitude: float, longitude: float) -> str:
+        """Return the cache key for a coordinate pair."""
+        return location_key(latitude, longitude)
+
+    def cache_get(self, key: str) -> tuple[Any, bool]:
+        """Read a cached payload and its expiry state."""
+        return _cache_get(key)
+
+    def cache_set(self, key: str, payload: Any) -> None:
+        """Store a payload in the provider cache."""
+        _cache_set(key, payload)
+
+    def cache_age(self, key: str) -> int | None:
+        """Return the age of a cached payload in seconds."""
+        return _cache_age(key)
+
+    def reset_cache(self) -> None:
+        """Clear all cached provider responses."""
+        reset_cache()
+
+    def fetch_air(self, latitude: float, longitude: float) -> dict[str, Any]:
+        """Fetch modelled air-quality data for a coordinate pair."""
+        return _fetch_air(latitude, longitude)
+
+    def fetch_weather(self, latitude: float, longitude: float) -> dict[str, Any]:
+        """Fetch current weather data for a coordinate pair."""
+        return _fetch_weather(latitude, longitude)
+
+    def get_current(
+        self,
+        latitude: float,
+        longitude: float,
+        location_label: str | None = None,
+        city: str | None = None,
+        state: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the current air-quality payload for a coordinate pair."""
+        return _get_current(latitude, longitude, location_label, city, state)
+
+    def get_forecast(self, latitude: float, longitude: float, hours: int = 48) -> dict[str, Any]:
+        """Return the hourly and daily air-quality forecast."""
+        return _get_forecast(latitude, longitude, hours)
+
+    def get_stations(self, latitude: float, longitude: float) -> dict[str, Any]:
+        """Return nearby CAMS grid points as station-like readings."""
+        return _get_stations(latitude, longitude)
+
+
+_air_provider = OpenMeteoAirProvider()
+
+
+def fetch_air(latitude, longitude):
+    """Module-level wrapper for :meth:`OpenMeteoAirProvider.fetch_air`."""
+    return _air_provider.fetch_air(latitude, longitude)
+
+
+def fetch_weather(latitude, longitude):
+    """Module-level wrapper for :meth:`OpenMeteoAirProvider.fetch_weather`."""
+    return _air_provider.fetch_weather(latitude, longitude)
+
+
+def get_current(latitude, longitude, location_label=None, city=None, state=None):
+    """Module-level wrapper for :meth:`OpenMeteoAirProvider.get_current`."""
+    return _air_provider.get_current(latitude, longitude, location_label, city, state)
+
+
+def get_forecast(latitude, longitude, hours=48):
+    """Module-level wrapper for :meth:`OpenMeteoAirProvider.get_forecast`."""
+    return _air_provider.get_forecast(latitude, longitude, hours)
+
+
+def get_stations(latitude, longitude):
+    """Module-level wrapper for :meth:`OpenMeteoAirProvider.get_stations`."""
+    return _air_provider.get_stations(latitude, longitude)

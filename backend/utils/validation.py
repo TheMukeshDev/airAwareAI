@@ -9,6 +9,8 @@ from utils.http import error
 TRUTHY_VALUES = frozenset({"1", "true", "yes", "on", "t", "y"})
 FALSY_VALUES = frozenset({"0", "false", "no", "off", "f", "n", ""})
 CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
+PROMPT_ROLE_TOKENS = re.compile(r"<\|(?:system|developer|assistant|user)\|>", re.IGNORECASE)
+PROMPT_ROLE_LABELS = re.compile(r"(?im)^\s*(?:system|developer|assistant)\s*:")
 
 
 def parse_bool(value, default=False):
@@ -95,6 +97,15 @@ def bounded_text(value, field, max_length, allow_empty=True):
         return None, error(f"{field} must be at most {max_length} characters.", 422)
     if not cleaned and not allow_empty:
         return None, error(f"{field} is required.", 422)
+    return cleaned, None
+
+
+def sanitize_prompt_text(value, field="message", max_length=2000, allow_empty=False):
+    cleaned, failure = bounded_text(value, field, max_length, allow_empty=allow_empty)
+    if failure:
+        return None, failure
+    cleaned = PROMPT_ROLE_TOKENS.sub("[role]", cleaned)
+    cleaned = PROMPT_ROLE_LABELS.sub("context:", cleaned)
     return cleaned, None
 
 

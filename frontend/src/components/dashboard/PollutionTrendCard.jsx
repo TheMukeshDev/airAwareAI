@@ -17,13 +17,13 @@ export function PollutionTrendCard({ reading, forecast, series, missing, categor
       </CardHeader>
       <div className="mt-3">
         {unavailable ? (
-          <div className="flex h-[168px] items-center justify-center text-[12px] text-slate-400">
+          <div role="status" aria-live="polite" className="flex h-[168px] items-center justify-center text-[12px] text-slate-400">
             {aqiScaleLabel(scale)} unavailable for this reading.
           </div>
         ) : series.some((item) => item.value !== null && item.value !== undefined) ? (
           <TrendChart data={series} color={categoryColor} height={168} ariaLabel={`24 hour ${aqiScaleLabel(scale)} trend`} unit="AQI" />
         ) : (
-          <div className="flex h-[168px] items-center justify-center text-[12px] text-slate-400">
+          <div role="status" aria-live="polite" className="flex h-[168px] items-center justify-center text-[12px] text-slate-400">
             Forecast unavailable for this location.
           </div>
         )}

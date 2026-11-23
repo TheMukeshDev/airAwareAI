@@ -56,7 +56,7 @@ export function ActivityHistoryCard({ historyState, onPage }) {
             </tbody>
           </table>
         ) : (
-          <p className="py-6 text-center text-[12px] text-slate-400">No activities logged yet.</p>
+          <p role="status" className="py-6 text-center text-[12px] text-slate-400">No activities logged yet.</p>
         )}
       </div>
       {pages > 1 ? (

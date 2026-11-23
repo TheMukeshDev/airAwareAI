@@ -41,7 +41,7 @@ export function LeaderboardCard({ leaderboardState }) {
             </div>
           ))
         ) : (
-          <p className="py-4 text-center text-[12px] text-slate-400">No leaderboard entries yet.</p>
+          <p role="status" className="py-4 text-center text-[12px] text-slate-400">No leaderboard entries yet.</p>
         )}
       </div>
     </Card>
