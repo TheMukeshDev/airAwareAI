@@ -2,6 +2,7 @@
 
 from flask import Blueprint, jsonify, request
 
+from security import shared_rate_limit
 from services import community_service
 from utils.http import error, pagination, require_auth
 from utils.validation import ensure_json_object
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 @community_bp.get("/community/stats")
 @require_auth
+@shared_rate_limit("community.read", 120, 60)
 def stats(user_id):
     try:
         return jsonify(community_service.stats(user_id))
@@ -22,6 +24,7 @@ def stats(user_id):
 
 @community_bp.get("/community/challenges")
 @require_auth
+@shared_rate_limit("community.read", 120, 60)
 def challenges(user_id):
     try:
         return jsonify(community_service.list_challenges(user_id))
@@ -32,6 +35,7 @@ def challenges(user_id):
 
 @community_bp.post("/community/challenges/join")
 @require_auth
+@shared_rate_limit("community.join", 30, 60)
 def join(user_id):
     data = request.get_json(silent=True)
     data, failure = ensure_json_object(data)
@@ -52,6 +56,7 @@ def join(user_id):
 
 @community_bp.get("/community/leaderboard")
 @require_auth
+@shared_rate_limit("community.read", 120, 60)
 def leaderboard(user_id):
     page, per_page = pagination(default_per_page=10)
     try:

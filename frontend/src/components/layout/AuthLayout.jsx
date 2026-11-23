@@ -4,7 +4,7 @@ import { Logo } from "./Logo";
 
 export function AuthLayout({ title, subtitle, children, footer }) {
   return (
-    <main id="main-content" tabIndex={-1} className="app-bg min-h-screen outline-none">
+    <main id="main-content" tabIndex={-1} className="app-bg min-h-screen">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-ink-800 focus:px-4 focus:py-2 focus:text-white"

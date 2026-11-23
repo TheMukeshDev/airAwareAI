@@ -10,7 +10,7 @@ export function MobileTopbar() {
   const navigate = useNavigate();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-hairline bg-ink-950/85 px-4 backdrop-blur-xl lg:hidden">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-hairline bg-ink-950/95 px-4 backdrop-blur-xl lg:hidden">
       <Logo to="/dashboard" />
       <div className="flex items-center gap-1">
         <NavLink

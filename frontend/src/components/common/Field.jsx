@@ -2,8 +2,9 @@
 import { cn } from "../../lib/utils";
 
 const control =
-  "w-full rounded-xl border border-hairline bg-ink-900/80 px-3.5 text-sm text-slate-100 placeholder:text-slate-400 " +
-  "transition-colors focus:border-aurora-400/60 focus:bg-ink-900 focus:outline-none disabled:opacity-50";
+  "w-full rounded-[10px] border border-hairline bg-ink-900/90 px-3.5 text-[13.5px] text-slate-100 placeholder:text-slate-500 " +
+  "transition-[border-color,background-color,box-shadow] focus:border-aurora-400/60 focus:bg-ink-900 " +
+  "focus:shadow-[0_0_0_3px_rgba(157,183,150,0.08)] disabled:cursor-not-allowed disabled:opacity-50";
 
 export const Input = forwardRef(function Input({ className, ...props }, ref) {
   return <input ref={ref} className={cn(control, "h-11", className)} {...props} />;
@@ -13,7 +14,7 @@ export const Textarea = forwardRef(function Textarea({ className, rows = 4, ...p
   return <textarea ref={ref} rows={rows} className={cn(control, "py-3 leading-relaxed", className)} {...props} />;
 });
 
-export const Select = forwardRef(function Select({ className, children, ...props }, ref) {
+const Select = forwardRef(function Select({ className, children, ...props }, ref) {
   return (
     <select ref={ref} className={cn(control, "h-11 appearance-none pr-9", className)} {...props}>
       {children}

@@ -25,6 +25,7 @@ export function Register() {
 
   const update = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
+
   const submit = async (event) => {
     event?.preventDefault();
     const nextErrors = {};

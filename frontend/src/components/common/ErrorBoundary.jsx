@@ -1,4 +1,5 @@
 ﻿import { Component } from "react";
+import { Button } from "./Button";
 
 export class ErrorBoundary extends Component {
   constructor(props) {
@@ -20,13 +21,15 @@ export class ErrorBoundary extends Component {
           <p className="mt-2 text-sm text-slate-400">
             The page could not be displayed. Refresh the page or try again later.
           </p>
-          <button
+          <Button
             type="button"
-            className="mt-4 rounded-xl border border-hairline bg-white/5 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"
+            variant="secondary"
+            size="sm"
+            className="mt-5"
             onClick={() => window.location.reload()}
           >
-            Reload
-          </button>
+            Reload page
+          </Button>
         </div>
       );
     }

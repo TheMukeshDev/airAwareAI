@@ -35,6 +35,31 @@ function groupByWindow(actions) {
     .filter((group) => group.items.length);
 }
 
+function safeActions(plan) {
+  return Array.isArray(plan?.actions)
+    ? plan.actions.filter((action) => action && typeof action === "object")
+    : [];
+}
+
+function safePlanDate(value) {
+  if (!value) return "Not specified";
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function safeText(value, fallback) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function safeContextLabel(value, fallback) {
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object") {
+    if (typeof value.label === "string" && value.label.trim()) return value.label;
+  }
+  return fallback;
+}
+
 export function DailyPlan() {
   const { user } = useAuth();
   const [state, setState] = useState({ plan: null, loading: true, generating: false });
@@ -82,10 +107,17 @@ export function DailyPlan() {
   };
 
   const plan = state.plan;
-  const actions = plan?.actions ?? [];
+  const actions = safeActions(plan);
   const done = actions.filter((action) => action.completed).length;
   const context = plan?.context;
   const category = context?.scale ? classifyAqi(context?.aqi, context.scale) : null;
+  const outdoorWindow = safeContextLabel(context?.outdoor_window, "No safe low-pollution window identified");
+  const alertMessage =
+    typeof context?.alert === "string"
+      ? context.alert
+      : typeof context?.alert?.message === "string"
+        ? context.alert.message
+        : null;
   const groups = groupByWindow(actions);
   const saved = actions.filter((a) => a.completed).reduce((sum, a) => sum + (Number(a.co2_saved_kg) || 0), 0);
 
@@ -116,13 +148,13 @@ export function DailyPlan() {
                   </Badge>
                 }
               >
-                <CardTitle as="h2">{plan.title || "Today's focus"}</CardTitle>
-                <CardDescription>{plan.summary || "Personalised from your profile and today's readings."}</CardDescription>
+                <CardTitle as="h2">{safeText(plan.title, "Today's focus")}</CardTitle>
+                <CardDescription>{safeText(plan.summary, "Personalised from your profile and today's readings.")}</CardDescription>
               </CardHeader>
               <div className="mt-4">
                 <Progress value={actions.length ? (done / actions.length) * 100 : 0} label="Today's completion" />
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-2.5">
+              <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
                 <div className="rounded-xl border border-hairline bg-ink-900/60 p-3">
                   <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400">Estimated saving</p>
                   <p className="mt-1 font-display text-[17px] font-semibold text-aurora-300 tabular-nums">
@@ -135,7 +167,7 @@ export function DailyPlan() {
                 </div>
                 <div className="rounded-xl border border-hairline bg-ink-900/60 p-3">
                   <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400">For</p>
-                  <p className="mt-1 text-[12.5px] font-medium text-slate-200">{plan.date || "Not specified"}</p>
+                  <p className="mt-1 text-[12.5px] font-medium text-slate-200">{safePlanDate(plan.date)}</p>
                 </div>
               </div>
             </Card>
@@ -154,7 +186,7 @@ export function DailyPlan() {
                   ["Location", context?.location ?? user?.location?.city ?? "—"],
                   ["AQI used", context?.aqi !== undefined && context?.aqi !== null && context?.scale ? `${Math.round(context.aqi)} (${context.scale === "india" ? "India" : "US"})` : "—"],
                   ["PM2.5", context?.pm2_5 !== undefined && context?.pm2_5 !== null ? `${formatNumber(context.pm2_5)} µg/m³` : "—"],
-                  ["Outside window", context?.outdoor_window || "No safe low-pollution window identified"],
+                  ["Outside window", outdoorWindow],
                   ["Readings source", context?.source || "—"],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-start justify-between gap-3 border-b border-hairline pb-2 last:border-0">
@@ -163,10 +195,10 @@ export function DailyPlan() {
                   </div>
                 ))}
               </div>
-              {context?.alert ? (
+              {alertMessage ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-verypoor/25 bg-verypoor/[0.06] p-3 text-[11.5px] leading-relaxed text-verypoor/90" role="alert">
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                  {context.alert}
+                  {alertMessage}
                 </div>
               ) : null}
             </Card>

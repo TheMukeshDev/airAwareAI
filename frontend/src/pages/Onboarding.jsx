@@ -6,6 +6,7 @@ import { Button } from "../components/common/Button";
 import { LabeledSelect, Field, Input } from "../components/common/Field";
 import { Progress } from "../components/common/Progress";
 import { LiveAnnouncer } from "../components/common/LiveAnnouncer";
+import { ErrorState } from "../components/common/ErrorState";
 import { useAuth } from "../context/AuthContext";
 import { profileApi, apiError } from "../services/api";
 import { cn } from "../lib/utils";
@@ -24,6 +25,8 @@ export function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  const [pendingSkip, setPendingSkip] = useState(false);
 
   const headingRef = useRef(null);
   const [form, setForm] = useState({
@@ -96,6 +99,19 @@ export function Onboarding() {
     };
   };
 
+  const finishSetup = async (skipped) => {
+    try {
+      await refreshUser();
+      setRefreshError(null);
+      toast.success(skipped ? "You can complete setup anytime from Settings." : "You're set up.");
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      const message = apiError(error, "Setup saved, but your session could not be refreshed.");
+      setRefreshError(message);
+      toast.error(message);
+    }
+  };
+
   const submit = async (skipped = false) => {
     setSubmitting(true);
     try {
@@ -107,9 +123,8 @@ export function Onboarding() {
         onboarding_complete: !skipped,
         onboarding_skipped: skipped,
       });
-      await refreshUser().catch(() => {});
-      toast.success(skipped ? "You can complete setup anytime from Settings." : "You're set up.");
-      navigate("/dashboard", { replace: true });
+      setPendingSkip(skipped);
+      await finishSetup(skipped);
     } catch (error) {
       toast.error(apiError(error, "Could not save onboarding."));
     } finally {
@@ -118,7 +133,7 @@ export function Onboarding() {
   };
 
   return (
-    <main id="main-content" tabIndex={-1} className="app-bg min-h-screen outline-none">
+    <main id="main-content" tabIndex={-1} className="app-bg min-h-screen">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-ink-800 focus:px-4 focus:py-2 focus:text-white"
@@ -147,10 +162,18 @@ export function Onboarding() {
           <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-aurora-400/20 bg-aurora-400/8 text-aurora-300" aria-hidden="true">
             <Icon size={19} />
           </span>
-          <h1 ref={headingRef} tabIndex={-1} className="mt-4 font-display text-[24px] font-semibold text-white outline-none">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-4 font-display text-[24px] font-semibold text-white">
             {active.title}
           </h1>
           <p className="mt-1.5 text-[13px] leading-relaxed text-slate-400">{active.description}</p>
+
+          {refreshError ? (
+            <ErrorState
+              message={refreshError}
+              onRetry={() => finishSetup(pendingSkip)}
+              retryLabel="Refresh profile"
+            />
+          ) : null}
 
           <div className="mt-7 space-y-4">
             {step === 0 ? (

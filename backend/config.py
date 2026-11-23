@@ -46,12 +46,18 @@ class Config:
     GEMINI_MODEL = _text("GEMINI_MODEL", "gemini-2.5-flash")
     GEMINI_TIMEOUT_SECONDS = max(1, _integer("GEMINI_TIMEOUT_SECONDS", 12))
 
+
     OPEN_METEO_AIR_URL = _text(
         "OPEN_METEO_AIR_URL", "https://air-quality-api.open-meteo.com/v1/air-quality"
     )
     OPEN_METEO_WEATHER_URL = _text(
         "OPEN_METEO_WEATHER_URL", "https://api.open-meteo.com/v1/forecast"
     )
+
+    CARTO_API_KEY = _text("CARTO_API_KEY")
+    CARTO_TILE_TIMEOUT_SECONDS = max(1, _integer("CARTO_TILE_TIMEOUT_SECONDS", 6))
+    CARTO_TILE_MAX_BYTES = max(1024, _integer("CARTO_TILE_MAX_BYTES", 1024 * 1024))
+    CARTO_TILE_CACHE_SECONDS = max(0, _integer("CARTO_TILE_CACHE_SECONDS", 86400))
 
     FRONTEND_URL = _text("FRONTEND_URL")
     CORS_ORIGINS = [
@@ -60,12 +66,14 @@ class Config:
         if origin.strip()
     ]
     CACHE_TTL_SECONDS = max(1, _integer("CACHE_TTL_SECONDS", 600))
+    MAX_FETCH_LIMIT = max(1, _integer("MAX_FETCH_LIMIT", 5000))
 
     MAX_CONTENT_LENGTH = max(1024, _integer("MAX_CONTENT_LENGTH", 1024 * 1024))
     RATELIMIT_ENABLED = _boolean("RATELIMIT_ENABLED", True)
     RATELIMIT_STORAGE_URI = _text("RATELIMIT_STORAGE_URI", "memory://")
     RATELIMIT_DEFAULT = _text("RATELIMIT_DEFAULT", "120/minute")
     RATELIMIT_HEADERS_ENABLED = True
+    SHARED_RATE_LIMIT_ENABLED = _boolean("SHARED_RATE_LIMIT_ENABLED", True)
     SECURITY_HEADERS_ENABLED = _boolean("SECURITY_HEADERS_ENABLED", True)
 
     JSON_SORT_KEYS = False

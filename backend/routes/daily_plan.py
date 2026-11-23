@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from flask import Blueprint, jsonify, request
 
 from extensions import daily_plans, find_user
+from security import shared_rate_limit
 from services import recommendation_engine
 from services.air_lookup import require_air_for_user
 from services.impact_calculator import normalize_profile
@@ -83,6 +84,7 @@ def today_plan(user_id):
 
 @daily_plan_bp.post("/daily-plan/generate")
 @require_auth
+@shared_rate_limit("daily_plan.generate", 20, 3600)
 def generate_plan(user_id):
     data = request.get_json(silent=True)
     if data is None:

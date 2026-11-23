@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Award, Bike, Leaf, Plus, TrendingDown, History, ArrowLeft, ArrowRight } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
@@ -9,6 +9,8 @@ import { Stat } from "../components/common/Stat";
 import { Badge } from "../components/common/Badge";
 import { DataNote } from "../components/common/DataNote";
 import { LoadingBlock } from "../components/common/Spinner";
+import { ErrorState } from "../components/common/ErrorState";
+import { useAsyncResource } from "../hooks/useAsyncResource";
 import { SimpleBarChart } from "../components/charts/Charts";
 import { impactApi, apiError } from "../services/api";
 import { formatNumber } from "../lib/utils";
@@ -21,8 +23,26 @@ function today() {
 
 export function Impact() {
   const { user } = useAuth();
-  const [summary, setSummary] = useState({ data: null, loading: true });
-  const [history, setHistory] = useState({ records: [], page: 1, pages: 1, loading: true });
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const summary = useAsyncResource(() => impactApi.personal({ period: "30d" }), [refreshKey], {
+    fallback: "Could not load your impact summary.",
+  });
+  const history = useAsyncResource(
+    async () => {
+      const data = await impactApi.history({ page: historyPage, per_page: 8 });
+      return {
+        records: data.records ?? [],
+        page: data.page ?? historyPage,
+        pages: data.pages ?? 1,
+      };
+    },
+    [historyPage, refreshKey],
+    {
+      initialData: { records: [], page: 1, pages: 1 },
+      fallback: "Could not load your activity history.",
+    },
+  );
   const [form, setForm] = useState({
     date: today(),
     distance_km: "",
@@ -32,47 +52,6 @@ export function Impact() {
     note: "",
   });
   const [submitting, setSubmitting] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    impactApi
-      .personal({ period: "30d" })
-      .then((data) => {
-        if (!cancelled) setSummary({ data, loading: false });
-      })
-      .catch(() => {
-        if (!cancelled) setSummary({ data: null, loading: false });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshKey]);
-
-  const loadHistory = useCallback(async (page = 1, signal) => {
-    setHistory((current) => ({ ...current, loading: true }));
-    try {
-      const data = await impactApi.history({ page, per_page: 8 });
-      if (!signal?.cancelled) {
-        setHistory({
-          records: data.records ?? [],
-          page: data.page ?? page,
-          pages: data.pages ?? 1,
-          loading: false,
-        });
-      }
-    } catch {
-      if (!signal?.cancelled) setHistory((current) => ({ ...current, loading: false }));
-    }
-  }, []);
-
-  useEffect(() => {
-    const signal = { cancelled: false };
-    Promise.resolve().then(() => loadHistory(1, signal));
-    return () => {
-      signal.cancelled = true;
-    };
-  }, [loadHistory, refreshKey]);
 
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -102,7 +81,7 @@ export function Impact() {
           ? `Logged. ≈${formatNumber(data.record.avoided_kg, { maximumFractionDigits: 2 })} kg CO₂e avoided.`
           : "Activity logged.",
       );
-      setSummary((current) => ({ ...current, loading: true }));
+      setHistoryPage(1);
       setRefreshKey((key) => key + 1);
       setForm((current) => ({ ...current, note: "", distance_km: "" }));
     } catch (error) {
@@ -115,10 +94,12 @@ export function Impact() {
   const data = summary.data;
   const totals = data?.totals ?? {};
   const weekly = useMemo(
-    () => (data?.weekly ?? []).map((entry) => ({ label: entry.label, value: entry.avoided_kg })),
+    () => (Array.isArray(data?.weekly) ? data.weekly : []).map((entry) => ({ label: entry.label, value: entry.avoided_kg })),
     [data],
   );
-  const achievements = data?.achievements ?? [];
+  const achievements = Array.isArray(data?.achievements) ? data.achievements : [];
+  const historyRecords = Array.isArray(history.records) ? history.records : [];
+  const historyPages = typeof history.pages === "number" ? history.pages : 1;
   const factorVersion = data?.factor_version;
 
   return (
@@ -129,6 +110,8 @@ export function Impact() {
         description="Estimated emissions from activities you log, compared against a documented baseline. Estimates stay labelled — nothing here is independently verified."
         actions={<Badge tone="neutral">Factor set {factorVersion ?? "unknown"}</Badge>}
       />
+
+      {summary.error ? <ErrorState message={summary.error} onRetry={summary.reload} /> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
@@ -252,14 +235,16 @@ export function Impact() {
       </div>
 
       <Card>
-        <CardHeader action={<Badge tone="neutral">{history.page}/{history.pages}</Badge>}>
+        <CardHeader action={<Badge tone="neutral">{history.page}/{historyPages}</Badge>}>
           <CardTitle as="h2">Activity history</CardTitle>
           <CardDescription>Most recent first. Pagination keeps long histories fast.</CardDescription>
         </CardHeader>
         <div className="mt-3 overflow-x-auto">
-          {history.loading ? (
+          {history.error ? (
+            <ErrorState message={history.error} onRetry={history.reload} />
+          ) : history.loading ? (
             <LoadingBlock className="border-0 bg-transparent" label="Loading history" />
-          ) : history.records.length ? (
+          ) : historyRecords.length ? (
             <table className="w-full min-w-[560px] text-left text-[12px]">
               <caption className="sr-only">Logged journey history with baseline, actual emissions, and avoided emissions</caption>
               <thead>
@@ -273,7 +258,7 @@ export function Impact() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-hairline">
-                {history.records.map((record) => (
+                {historyRecords.map((record) => (
                   <tr key={record.id}>
                     <td className="py-2.5 text-slate-300">{record.date}</td>
                     <td className="py-2.5 text-slate-200">
@@ -294,13 +279,13 @@ export function Impact() {
             <p className="py-6 text-center text-[12px] text-slate-400">No activities logged yet.</p>
           )}
         </div>
-        {history.pages > 1 ? (
+        {historyPages > 1 ? (
           <div className="mt-3 flex items-center justify-end gap-2 border-t border-hairline pt-3">
-            <Button variant="ghost" size="sm" disabled={history.page <= 1} onClick={() => loadHistory(history.page - 1)}>
+            <Button variant="ghost" size="sm" disabled={history.page <= 1} onClick={() => setHistoryPage(history.page - 1)}>
               <ArrowLeft size={13} aria-hidden="true" />
               Previous
             </Button>
-            <Button variant="ghost" size="sm" disabled={history.page >= history.pages} onClick={() => loadHistory(history.page + 1)}>
+            <Button variant="ghost" size="sm" disabled={history.page >= history.pages} onClick={() => setHistoryPage(history.page + 1)}>
               Next
               <ArrowRight size={13} aria-hidden="true" />
             </Button>

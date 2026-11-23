@@ -137,7 +137,7 @@ export function PublicLayout() {
         ) : null}
       </header>
 
-      <main id="main-content" tabIndex={-1} className="outline-none">
+      <main id="main-content" tabIndex={-1} className="">
         <Outlet />
       </main>
 

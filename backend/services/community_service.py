@@ -1,5 +1,8 @@
 ﻿import logging
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+
+from flask import g, has_request_context
 
 from extensions import challenge_members, challenges, impact_records, indoor_assessments, users
 from services.impact_calculator import FACTOR_VERSION, personal_summary
@@ -46,6 +49,35 @@ DEFAULT_CHALLENGES = [
 ]
 
 
+def _request_cache():
+    if not has_request_context():
+        return None
+    cache = getattr(g, "community_collections", None)
+    if cache is None:
+        cache = {}
+        g.community_collections = cache
+    return cache
+
+
+def _load_collection(collection):
+    cache = _request_cache()
+    if cache is not None and collection.name in cache:
+        return cache[collection.name]
+    try:
+        items = list(collection.find({}))
+    except Exception:
+        logger.exception("Failed to load %s", collection.name)
+        items = []
+    if cache is not None:
+        cache[collection.name] = items
+    return items
+
+
+def _invalidate_collection_cache():
+    if has_request_context():
+        g.community_collections = {}
+
+
 def ensure_seeded():
     now = datetime.now(UTC)
     for template in DEFAULT_CHALLENGES:
@@ -61,6 +93,7 @@ def ensure_seeded():
                     "created_at": now,
                 }
             )
+            _invalidate_collection_cache()
         except Exception:
             logger.exception("Failed to seed challenge %s", template.get("id"))
 
@@ -122,24 +155,13 @@ def _category_matches_record(category, record):
 
 
 def _users_by_id():
-    mapping = {}
-    try:
-        for user in users.find({}):
-            mapping[user.get("_id")] = user
-    except Exception:
-        logger.exception("Failed to load users")
-    return mapping
+    return {user.get("_id"): user for user in _load_collection(users)}
 
 
 def _totals_by_user(users_map=None, require_share_aggregate=False, require_leaderboard_opt_in=False):
     users_map = users_map if users_map is not None else _users_by_id()
     totals = {}
-    try:
-        records = list(impact_records.find({}))
-    except Exception:
-        logger.exception("Failed to load impact records")
-        records = []
-    for record in records:
+    for record in _load_collection(impact_records):
         user_id = record.get("user_id")
         if not user_id:
             continue
@@ -175,29 +197,26 @@ def _score_label(score):
     return "Emerging"
 
 
-def _challenge_checkins(user_id, challenge, start_dt, end_dt):
+def _challenge_checkins(user_id, challenge, start_dt, end_dt, records=None, assessments=None):
     category = challenge.get("category")
-    count = 0
     if category == "indoor_air":
-        try:
-            assessments = list(indoor_assessments.find({"user_id": user_id}))
-        except Exception:
-            assessments = []
-        for item in assessments:
+        items = assessments if assessments is not None else _load_collection(indoor_assessments)
+        count = 0
+        for item in items:
+            if item.get("user_id") != user_id:
+                continue
             ts = _to_dt(item.get("created_at"))
             if ts and ((not start_dt) or ts >= start_dt) and ((not end_dt) or ts <= end_dt):
                 count += 1
         return count
-    try:
-        records = list(impact_records.find({"user_id": user_id}))
-    except Exception:
-        records = []
-    for record in records:
-        if not _date_in_window(record.get("date"), start_dt, end_dt):
-            continue
-        if _category_matches_record(category, record):
-            count += 1
-    return count
+    items = records if records is not None else _load_collection(impact_records)
+    return sum(
+        1
+        for record in items
+        if record.get("user_id") == user_id
+        and _date_in_window(record.get("date"), start_dt, end_dt)
+        and _category_matches_record(category, record)
+    )
 
 
 def stats(user_id):
@@ -239,66 +258,64 @@ def stats(user_id):
 def list_challenges(user_id):
     ensure_seeded()
     now = datetime.now(UTC)
-    memberships = {}
-    try:
-        for member in challenge_members.find({"user_id": user_id}):
-            memberships[member.get("challenge_id")] = member
-    except Exception:
-        logger.exception("Failed to load challenge memberships")
+    member_rows = _load_collection(challenge_members)
+    memberships = {
+        row.get("challenge_id"): row
+        for row in member_rows
+        if row.get("user_id") == user_id and row.get("challenge_id")
+    }
+    member_ids_by_challenge = defaultdict(set)
+    for row in member_rows:
+        if row.get("user_id") and row.get("challenge_id"):
+            member_ids_by_challenge[row["challenge_id"]].add(row["user_id"])
+
+    challenge_docs = sorted(_load_collection(challenges), key=lambda c: c.get("created_at") or now, reverse=True)
+    records_by_user = defaultdict(list)
+    for record in _load_collection(impact_records):
+        if record.get("user_id"):
+            records_by_user[record["user_id"]].append(record)
+    assessments = None
 
     items = []
-    try:
-        challenge_docs = list(challenges.find({}))
-    except Exception:
-        logger.exception("Failed to load challenges")
-        challenge_docs = []
-    challenge_docs.sort(key=lambda c: c.get("created_at") or now, reverse=True)
-
-    # preload impact records once for efficiency
-    try:
-        all_records = list(impact_records.find({}))
-    except Exception:
-        all_records = []
-
     for challenge in challenge_docs:
         challenge_id = challenge.get("id")
-        try:
-            member_rows = list(challenge_members.find({"challenge_id": challenge_id}))
-        except Exception:
-            member_rows = []
-        member_ids = {row.get("user_id") for row in member_rows if row.get("user_id")}
+        member_ids = member_ids_by_challenge.get(challenge_id, set())
+        user_records = [record for uid in member_ids for record in records_by_user.get(uid, ())]
         start_dt = _to_dt(challenge.get("starts_at"))
         end_dt = _to_dt(challenge.get("ends_at"))
         target = float(challenge.get("target_kg") or 0)
         category = challenge.get("category")
 
-        progress_kg = 0.0
-        for record in all_records:
-            if record.get("user_id") not in member_ids:
-                continue
-            if not _date_in_window(record.get("date"), start_dt, end_dt):
-                continue
-            if not _category_matches_record(category, record):
-                continue
-            progress_kg += float(record.get("avoided_kg") or 0)
-        progress_kg = round(max(0.0, progress_kg), 2)
+        progress_kg = round(
+            max(
+                0.0,
+                sum(
+                    float(record.get("avoided_kg") or 0)
+                    for record in user_records
+                    if _date_in_window(record.get("date"), start_dt, end_dt)
+                    and _category_matches_record(category, record)
+                ),
+            ),
+            2,
+        )
 
         if target > 0:
-            progress_pct = min(100, round((progress_kg / target) * 100)) if target else 0
+            progress_pct = min(100, round((progress_kg / target) * 100))
         else:
-            # habit challenge: derive check-ins from records/assessments in window
+            if assessments is None:
+                assessments = _load_collection(indoor_assessments)
             completed_members = 0
             for uid in member_ids:
-                if _challenge_checkins(uid, challenge, start_dt, end_dt) > 0:
+                checkins = _challenge_checkins(uid, challenge, start_dt, end_dt, user_records, assessments)
+                if checkins > 0:
                     completed_members += 1
-                    # best-effort update stored completed_logs for transparency
                     try:
                         challenge_members.update_one(
                             {"challenge_id": challenge_id, "user_id": uid},
-                            {"$set": {"completed_logs": _challenge_checkins(uid, challenge, start_dt, end_dt)}},
+                            {"$set": {"completed_logs": checkins}},
                         )
                     except Exception:
-                        pass
+                        logger.exception("Failed to store challenge check-ins")
             progress_pct = min(100, round((completed_members / max(1, len(member_ids))) * 100)) if member_ids else 0
 
         days_left = None
@@ -341,8 +358,8 @@ def join_challenge(user_id, challenge_id):
                     "completed_logs": 0,
                 }
             )
+            _invalidate_collection_cache()
         except Exception:
-            # possible unique conflict in concurrent join; treat as joined if exists now
             logger.exception("Failed to join challenge, checking existing membership")
             existing = challenge_members.find_one({"challenge_id": challenge_id, "user_id": user_id})
             if not existing:

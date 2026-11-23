@@ -33,7 +33,7 @@ export function Sidebar() {
                     to={to}
                     className={({ isActive }) =>
                       cn(
-                        "group relative flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-[13.5px] font-medium transition-colors",
+                        "group relative flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-[13.5px] font-medium transition-colors",
                         isActive
                           ? "bg-white/[0.07] text-white"
                           : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-100",

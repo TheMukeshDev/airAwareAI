@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -21,7 +21,9 @@ import { Segmented } from "../components/common/Toggle";
 import { DataNote } from "../components/common/DataNote";
 import { LoadingBlock } from "../components/common/Spinner";
 import { EmptyState } from "../components/common/EmptyState";
+import { ErrorState } from "../components/common/ErrorState";
 import { LiveAnnouncer } from "../components/common/LiveAnnouncer";
+import { useAsyncResource } from "../hooks/useAsyncResource";
 import { AqiCard } from "../components/dashboard/AqiCard";
 import { WeatherStrip } from "../components/dashboard/WeatherStrip";
 import { PollutantGrid } from "../components/dashboard/PollutantGrid";
@@ -46,34 +48,18 @@ export function Dashboard() {
   const [scale, setScale] = useState(user?.preferences?.aqi_scale || "us");
   const { data: reading, loading, error, refresh } = useAirQuality(coords);
   const { data: forecast } = useForecast(coords, 24);
-  const [planState, setPlanState] = useState({ plan: null, loading: true });
+  const plan = useAsyncResource(async () => {
+    const data = await planApi.today();
+    return data.plan ?? data;
+  }, [], { fallback: "Could not load today's plan." });
+  const impact = useAsyncResource(() => impactApi.personal({ period: "30d" }), [], {
+    fallback: "Could not load your impact summary.",
+  });
+  const [generating, setGenerating] = useState(false);
   const [busyId, setBusyId] = useState(null);
-  const [impact, setImpact] = useState(null);
   const [todayLabel] = useState(() =>
     new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }),
   );
-
-
-  useEffect(() => {
-    let cancelled = false;
-    planApi
-      .today()
-      .then((data) => {
-        if (!cancelled) setPlanState({ plan: data.plan ?? data, loading: false, generating: false });
-      })
-      .catch(() => {
-        if (!cancelled) setPlanState({ plan: null, loading: false, generating: false });
-      });
-    impactApi
-      .personal({ period: "30d" })
-      .then((data) => {
-        if (!cancelled) setImpact(data);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const announcement = loading
     ? "Loading air quality reading."
@@ -85,23 +71,24 @@ export function Dashboard() {
 
 
   const generatePlan = async () => {
-    setPlanState((current) => ({ ...current, generating: true }));
+    setGenerating(true);
     try {
       const data = await planApi.generate({});
-      setPlanState({ plan: data.plan ?? data, loading: false, generating: false });
+      plan.setData(data.plan ?? data);
       toast.success("Today's plan is ready.");
     } catch (err) {
       toast.error(apiError(err, "Could not generate a plan right now."));
-      setPlanState((current) => ({ ...current, generating: false }));
+    } finally {
+      setGenerating(false);
     }
   };
 
   const toggleAction = async (action) => {
-    if (!planState.plan?.id) return;
+    if (!plan.data?.id) return;
     setBusyId(action.id);
     try {
-      const data = await planApi.complete(planState.plan.id, action.id, !action.completed);
-      setPlanState((current) => ({ ...current, plan: data.plan ?? data }));
+      const data = await planApi.complete(plan.data.id, action.id, !action.completed);
+      plan.setData(data.plan ?? data);
     } catch (err) {
       toast.error(apiError(err, "Could not update that action."));
     } finally {
@@ -124,9 +111,9 @@ export function Dashboard() {
     }));
   }, [forecast, scale]);
 
-  const actions = planState.plan?.actions ?? [];
+  const actions = plan.data?.actions ?? [];
   const completed = actions.filter((action) => action.completed).length;
-  const avoided = impact?.totals?.avoided_kg ?? 0;
+  const avoided = impact.data?.totals?.avoided_kg ?? 0;
   const cached = Boolean(reading?.stale || reading?.cache?.hit);
 
   return (
@@ -175,7 +162,7 @@ export function Dashboard() {
               unit="kg CO₂e"
               icon={Leaf}
               tone="good"
-              hint={impact?.totals?.logged_activities ? `${impact.totals.logged_activities} logged activities` : "Log a trip to start"}
+              hint={impact.data?.totals?.logged_activities ? `${impact.data.totals.logged_activities} logged activities` : "Log a trip to start"}
             />
             <Stat
               label="Exposure today"
@@ -185,6 +172,10 @@ export function Dashboard() {
               hint={reading?.exposure?.message ?? "Based on readings and time outdoors"}
             />
           </div>
+
+          {impact.error ? (
+            <ErrorState message={impact.error} onRetry={impact.reload} compact retryLabel="Retry impact" />
+          ) : null}
 
           <Card className="p-4 sm:p-5">
             <CardHeader
@@ -240,7 +231,7 @@ export function Dashboard() {
         <Card>
           <CardHeader
             action={
-              planState.plan ? (
+              plan.data ? (
                 <Link to="/daily-plan" className="text-[12px] text-slate-400 hover:text-aurora-300">
                   View plan <ArrowUpRight size={12} className="inline" aria-hidden="true" />
                 </Link>
@@ -249,13 +240,15 @@ export function Dashboard() {
           >
             <CardTitle as="h2">Today&apos;s recommendations</CardTitle>
             <CardDescription>
-              {planState.plan?.summary ||
+              {plan.data?.summary ||
                 "Generated from your habits and today's readings. Every action stores why it was suggested."}
             </CardDescription>
           </CardHeader>
 
           <div className="mt-4">
-            {planState.loading ? (
+            {plan.error ? (
+              <ErrorState message={plan.error} onRetry={plan.reload} />
+            ) : plan.loading ? (
               <LoadingBlock className="min-h-[160px] border-0 bg-transparent" label="Loading your plan" />
             ) : actions.length ? (
               <>
@@ -277,7 +270,7 @@ export function Dashboard() {
                 title="No plan for today yet"
                 description="AirAware combines your lifestyle profile with the current AQI to build a plan you can finish today."
                 action={
-                  <Button onClick={generatePlan} loading={planState.generating} size="sm">
+                  <Button onClick={generatePlan} loading={generating} size="sm">
                     <Sparkles size={14} aria-hidden="true" />
                     Generate today&apos;s plan
                   </Button>

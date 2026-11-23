@@ -68,7 +68,7 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
       <div className="relative flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Current air quality</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-300">Current air quality</p>
             {cached ? <Badge tone="moderate">Cached</Badge> : null}
           </div>
           <div className="mt-1.5 flex items-center gap-1.5 text-[13px] text-slate-300">
@@ -79,7 +79,7 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
             </span>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onRefresh} aria-label="Refresh air quality" className="text-slate-400">
+        <Button variant="ghost" size="icon" onClick={onRefresh} aria-label="Refresh air quality" className="text-slate-300">
           <RefreshCw size={15} className={loading ? "animate-spin" : ""} aria-hidden="true" />
         </Button>
       </div>
@@ -90,7 +90,7 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/5 text-slate-400">
               <Info size={18} aria-hidden="true" />
             </span>
-            <p className="mt-3 max-w-[240px] text-[12.5px] leading-relaxed text-slate-400">{error}</p>
+            <p className="mt-3 max-w-[240px] text-[13px] leading-relaxed text-slate-300">{error}</p>
             <Button size="sm" variant="outline" className="mt-3" onClick={onRefresh}>
               Retry
             </Button>
@@ -103,12 +103,12 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
                 {reading ? category.label : loading ? "Loading…" : "Unavailable"}
               </span>
               {showScale ? (
-                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wider text-slate-400">
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider text-slate-300">
                   {scale === "india" ? "Indian AQI · CPCB scale" : "US AQI scale"}
                 </span>
               ) : null}
               {scale === "india" && reading?.aqi_india_method ? (
-                <span className="max-w-[230px] text-center text-[10px] leading-snug text-slate-500">
+                <span className="max-w-[230px] text-center text-[11px] leading-snug text-slate-300">
                   Computed estimate from model concentrations, not an official CPCB monitor reading.
                 </span>
               ) : null}
@@ -120,19 +120,19 @@ export function AqiCard({ reading, loading, error, onRefresh, className, showSca
 
       <div className="relative mt-5 grid grid-cols-2 gap-2 border-t border-hairline pt-4">
         <div>
-          <p className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400">PM2.5</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">PM2.5</p>
           <p className="mt-0.5 text-[15px] font-semibold text-slate-100 tabular-nums">
             {formatNumber(reading?.pollutants?.pm2_5)}
-            <span className="ml-1 text-[11px] font-normal text-slate-400">µg/m³</span>
+            <span className="ml-1 text-[11px] font-normal text-slate-300">µg/m³</span>
           </p>
         </div>
         <div>
-          <p className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400">Dominant</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">Dominant</p>
           <p className="mt-0.5 text-[15px] font-semibold text-slate-100">{reading?.primary_pollutant || "—"}</p>
         </div>
       </div>
 
-      <div className="relative mt-4 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-400">
+      <div className="relative mt-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300">
         <span className="inline-flex items-center gap-1.5">
           <Clock3 size={11} aria-hidden="true" />
           {reading?.observed_at ? `Observed ${relativeTime(reading.observed_at)}` : "No observation timestamp"}

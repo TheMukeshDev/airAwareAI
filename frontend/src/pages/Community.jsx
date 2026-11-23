@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import toast from "react-hot-toast";
 import { Award, CalendarClock, Check, Leaf, Medal, TrendingUp, Users, Waves } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
@@ -9,68 +9,55 @@ import { Progress } from "../components/common/Progress";
 import { Stat } from "../components/common/Stat";
 import { DataNote } from "../components/common/DataNote";
 import { LoadingBlock } from "../components/common/Spinner";
+import { ErrorState } from "../components/common/ErrorState";
+import { useAsyncResource } from "../hooks/useAsyncResource";
 import { communityApi, apiError } from "../services/api";
 import { cn, formatNumber } from "../lib/utils";
 
 const RANK_STYLES = ["text-moderate", "text-slate-300", "text-poor"];
 
 export function Community() {
-  const [stats, setStats] = useState({ data: null, loading: true });
-  const [challenges, setChallenges] = useState({ items: [], loading: true });
-  const [leaderboard, setLeaderboard] = useState({ entries: [], loading: true });
+  const stats = useAsyncResource(() => communityApi.stats(), [], {
+    fallback: "Could not load community totals.",
+  });
+  const challenges = useAsyncResource(
+    async () => {
+      const data = await communityApi.challenges();
+      return { items: data.challenges ?? [] };
+    },
+    [],
+    {
+      initialData: { items: [] },
+      fallback: "Could not load green challenges.",
+    },
+  );
+  const leaderboard = useAsyncResource(
+    async () => {
+      const data = await communityApi.leaderboard({ page: 1, per_page: 10 });
+      return { entries: data.entries ?? [] };
+    },
+    [],
+    {
+      initialData: { entries: [] },
+      fallback: "Could not load the leaderboard.",
+    },
+  );
   const [joining, setJoining] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    communityApi
-      .stats()
-      .then((data) => {
-        if (!cancelled) setStats({ data, loading: false });
-      })
-      .catch(() => {
-        if (!cancelled) setStats({ data: null, loading: false });
-      });
-    communityApi
-      .challenges()
-      .then((data) => {
-        if (!cancelled) setChallenges({ items: data.challenges ?? [], loading: false });
-      })
-      .catch(() => {
-        if (!cancelled) setChallenges({ items: [], loading: false });
-      });
-    communityApi
-      .leaderboard({ page: 1, per_page: 10 })
-      .then((data) => {
-        if (!cancelled) setLeaderboard({ entries: data.entries ?? [], loading: false });
-      })
-      .catch(() => {
-        if (!cancelled) setLeaderboard({ entries: [], loading: false });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const join = async (challenge) => {
     setJoining(challenge.id);
     try {
       const data = await communityApi.join(challenge.id);
       const updated = data.challenge ?? { ...challenge, joined: true };
-      setChallenges((current) => ({
+      challenges.setData((current) => ({
         items: current.items.map((item) => (item.id === challenge.id ? { ...item, ...updated, joined: true } : item)),
-        loading: false,
       }));
-      setStats((current) =>
-        current.data
+      stats.setData((current) =>
+        current
           ? {
               ...current,
-              data: {
-                ...current.data,
-                members:
-                  !challenge.joined && typeof current.data.members === "number"
-                    ? current.data.members + 1
-                    : current.data.members,
-              },
+              members:
+                !challenge.joined && typeof current.members === "number" ? current.members + 1 : current.members,
             }
           : current,
       );
@@ -84,6 +71,8 @@ export function Community() {
 
   const data = stats.data;
   const yourRank = data?.your_rank;
+  const challengeItems = challenges.data?.items ?? [];
+  const leaderboardEntries = leaderboard.data?.entries ?? [];
 
   return (
     <div className="space-y-5">
@@ -98,6 +87,8 @@ export function Community() {
         }
       />
 
+      {stats.error ? <ErrorState message={stats.error} onRetry={stats.reload} /> : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Participants" value={formatNumber(data?.members, { maximumFractionDigits: 0 })} icon={Users} tone="glow" hint="Accounts contributing to this hub" />
         <Stat label="Collective avoided" value={formatNumber(data?.collective_avoided_kg)} unit="kg CO₂e" icon={Leaf} tone="good" hint="Sum of logged avoided emissions" />
@@ -108,15 +99,17 @@ export function Community() {
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-4">
           <Card>
-            <CardHeader action={<Badge tone="neutral">{challenges.items.length} open</Badge>}>
+            <CardHeader action={<Badge tone="neutral">{challengeItems.length} open</Badge>}>
               <CardTitle as="h2">Green challenges</CardTitle>
               <CardDescription>Join a challenge to have your logged activities count toward its goal.</CardDescription>
             </CardHeader>
             <div className="mt-4 space-y-2.5">
-              {challenges.loading ? (
+              {challenges.error ? (
+                <ErrorState message={challenges.error} onRetry={challenges.reload} />
+              ) : challenges.loading ? (
                 <LoadingBlock className="border-0 bg-transparent" label="Loading challenges" />
-              ) : challenges.items.length ? (
-                challenges.items.map((challenge) => (
+              ) : challengeItems.length ? (
+                challengeItems.map((challenge) => (
                   <div key={challenge.id} className="rounded-xl border border-hairline bg-ink-900/50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -179,10 +172,12 @@ export function Community() {
               <CardDescription>Display names only · estimates for the current period</CardDescription>
             </CardHeader>
             <div className="mt-3 space-y-1">
-              {leaderboard.loading ? (
+              {leaderboard.error ? (
+                <ErrorState message={leaderboard.error} onRetry={leaderboard.reload} />
+              ) : leaderboard.loading ? (
                 <LoadingBlock className="border-0 bg-transparent" label="Loading leaderboard" />
-              ) : leaderboard.entries.length ? (
-                leaderboard.entries.map((entry) => (
+              ) : leaderboardEntries.length ? (
+                leaderboardEntries.map((entry) => (
                   <div
                     key={`${entry.rank}-${entry.name}`}
                     className={cn(

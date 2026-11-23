@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import re
 
 from flask import Blueprint, jsonify

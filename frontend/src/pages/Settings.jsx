@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Bell, LogOut, MapPin, Shield, User as UserIcon, Trash2 } from "lucide-react";
+import { Bell, LogOut, MapPin, Shield, User as UserIcon } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
 import { Button } from "../components/common/Button";
 import { Card, CardDescription, CardHeader, CardTitle } from "../components/common/Card";
@@ -9,6 +9,7 @@ import { Field, Input, LabeledSelect } from "../components/common/Field";
 import { Toggle } from "../components/common/Toggle";
 import { Badge } from "../components/common/Badge";
 import { DataNote } from "../components/common/DataNote";
+import { ErrorState } from "../components/common/ErrorState";
 import { useAuth } from "../context/AuthContext";
 import { profileApi, apiError } from "../services/api";
 import { CITIES, GOALS, TRANSPORT_MODES } from "../lib/constants";
@@ -30,6 +31,7 @@ export function Settings() {
   });
   const [scale, setScale] = useState(user?.preferences?.aqi_scale ?? "us");
   const [saving, setSaving] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
 
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const setPref = (key, value) => setPrefs((current) => ({ ...current, [key]: value }));
@@ -70,12 +72,29 @@ export function Settings() {
       const data = await profileApi.update(payload);
       const nextUser = data.user ?? { ...user, ...payload };
       updateUser(nextUser);
-      await refreshUser().catch(() => {});
+      try {
+        await refreshUser();
+        setRefreshError(null);
+      } catch (error) {
+        const message = apiError(error, "Settings saved, but your profile could not be refreshed.");
+        setRefreshError(message);
+        toast.error(message);
+      }
       toast.success("Settings saved.");
     } catch (error) {
       toast.error(apiError(error, "Could not save settings."));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const retryRefresh = async () => {
+    try {
+      await refreshUser();
+      setRefreshError(null);
+      toast.success("Profile refreshed.");
+    } catch (error) {
+      setRefreshError(apiError(error, "Could not refresh your profile."));
     }
   };
 
@@ -87,6 +106,8 @@ export function Settings() {
         description="Your location powers every reading. Your preferences shape the planner and what the community hub may aggregate."
         actions={user?.email ? <Badge tone="neutral">{user.email}</Badge> : null}
       />
+
+      {refreshError ? <ErrorState message={refreshError} onRetry={retryRefresh} /> : null}
 
       <form onSubmit={save} className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <div className="space-y-4">
@@ -201,17 +222,6 @@ export function Settings() {
               <Button type="button" variant="secondary" className="w-full" onClick={() => { logout(); navigate("/login", { replace: true }); }}>
                 <LogOut size={15} aria-hidden="true" />
                 Sign out
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                className="w-full"
-                disabled
-                aria-disabled="true"
-                title="Account deletion request coming soon"
-              >
-                <Trash2 size={15} aria-hidden="true" />
-                Request account deletion (coming soon)
               </Button>
             </div>
             <p className="mt-3 text-[10.5px] leading-relaxed text-slate-400">

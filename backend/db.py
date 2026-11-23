@@ -6,7 +6,6 @@ import json
 import threading
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -62,7 +61,7 @@ ALLOWED_QUERY_KEYS = {
     "activity_type",
 }
 
-MAX_FETCH_LIMIT = 5000
+MAX_FETCH_LIMIT = max(1, int(getattr(Config, "MAX_FETCH_LIMIT", 5000)))
 
 
 class StorageUnavailable(RuntimeError):
@@ -76,9 +75,6 @@ class IntegrityConflict(RuntimeError):
 def to_oid(value):
     return value
 
-
-def utcnow():
-    return datetime.now(UTC)
 
 
 def _config_value(config, name, default):
@@ -150,7 +146,6 @@ def _comparison_clause(key, op, value, params):
         operator = {"$gte": ">=", "$gt": ">", "$lte": "<=", "$lt": "<", "=": "="}[op]
         params.append(_sql_value(value))
         return f"{expr} {operator} %s"
-    # Fallback to jsonb path for non-indexed/complex keys (still no user identifiers interpolated except not possible; use path params)
     operator = {"$gte": ">=", "$gt": ">", "$lte": "<=", "$lt": "<", "=": "="}[op]
     params.extend([_path(key), _json(value)])
     return f"(data #> %s::text[]) {operator} %s::jsonb"
@@ -171,14 +166,7 @@ def _where(query):
     for key, expected in (query or {}).items():
         if not isinstance(key, str) or not key:
             continue
-        # Only allow keys that are either in allowlist/simple or safe dotted paths built from literals in code paths we control.
-        # For safety, reject unknown keys with dots unless explicitly allowed simple; but some callers might not use dotted keys.
-        if "." in key and key not in ALLOWED_QUERY_KEYS:
-            # permit dotted keys only if every segment is alnum/underscore? but still can't make indexable; use jsonb path safely via params
-            pass
         if key not in ALLOWED_QUERY_KEYS and key != "_id":
-            # Disallow unknown keys to avoid unindexable/unexpected predicates; callers should only query known fields.
-            # But be permissive for simple internal keys that may appear (e.g. starts_at comparisons not typical). Raise for safety? No, better to still support via jsonb path if key chars safe.
             if not all(part.replace("_", "").isalnum() for part in key.split(".")):
                 raise ValueError("Unsupported query key")
         if isinstance(expected, dict) and expected and all(str(op).startswith("$") for op in expected):
@@ -412,12 +400,15 @@ _mode = None
 _runtime = {"backend": Config.DB_BACKEND, "url": Config.SUPABASE_DB_URL}
 _connect_lock = threading.Lock()
 _connect_state = {"failures": 0, "next_retry_at": 0.0}
+_rate_limit_memory = {}
+_rate_limit_lock = threading.Lock()
 
 
 def configure(config_object):
-    global _pool, _mode, _runtime, _connect_state
+    global _pool, _mode, _runtime, _connect_state, MAX_FETCH_LIMIT
     backend = str(_config_value(config_object, "DB_BACKEND", Config.DB_BACKEND)).strip().lower()
     url = str(_config_value(config_object, "SUPABASE_DB_URL", Config.SUPABASE_DB_URL)).strip()
+    MAX_FETCH_LIMIT = max(1, int(_config_value(config_object, "MAX_FETCH_LIMIT", MAX_FETCH_LIMIT)))
     if backend == _runtime["backend"] and url == _runtime["url"]:
         return
     with _connect_lock:
@@ -502,19 +493,66 @@ def close():
 atexit.register(close)
 
 
-def close():
-    global _pool, _mode
-    with _connect_lock:
-        if _pool is not None:
-            try:
-                _pool.close()
-            except Exception:
-                pass
-        _pool = None
-        _mode = None
+def revoke_token(jti, expires_at):
+    pool = _pool_or_raise()
+    with pool.connection() as connection:
+        connection.execute(
+            sql.SQL(
+                "insert into {} (jti, expires_at) values (%s, to_timestamp(%s)) "
+                "on conflict (jti) do update set expires_at = excluded.expires_at"
+            ).format(sql.Identifier(TABLE_SCHEMA, "airaware_revoked_tokens")),
+            [str(jti), float(expires_at)],
+        )
 
 
-atexit.register(close)
+def is_token_revoked(jti):
+    pool = _pool_or_raise()
+    with pool.connection() as connection:
+        row = connection.execute(
+            sql.SQL("select 1 from {} where jti = %s and expires_at > now()").format(
+                sql.Identifier(TABLE_SCHEMA, "airaware_revoked_tokens")
+            ),
+            [str(jti)],
+        ).fetchone()
+    return row is not None
+
+
+def _memory_rate_limit_hit(bucket, identity, limit, window_seconds):
+    now = time.time()
+    key = (str(bucket), str(identity))
+    with _rate_limit_lock:
+        start, hits = _rate_limit_memory.get(key, (now, 0))
+        if now - start >= window_seconds:
+            start, hits = now, 0
+        hits += 1
+        _rate_limit_memory[key] = (start, hits)
+    return hits <= int(limit)
+
+
+def rate_limit_hit(bucket, identity, limit, window_seconds):
+    if storage_mode() != "supabase":
+        return _memory_rate_limit_hit(bucket, identity, limit, window_seconds)
+    pool = _pool_or_raise()
+    statement = sql.SQL(
+        "insert into {table} (bucket, identity, window_start, hits) "
+        "values (%s, %s, extract(epoch from now())::bigint, 1) "
+        "on conflict (bucket, identity) do update set "
+        "window_start = case when {table}.window_start + %s <= extract(epoch from now())::bigint "
+        "then extract(epoch from now())::bigint else {table}.window_start end, "
+        "hits = case when {table}.window_start + %s <= extract(epoch from now())::bigint "
+        "then 1 else {table}.hits + 1 end, "
+        "updated_at = now() returning hits"
+    ).format(table=sql.Identifier(TABLE_SCHEMA, "airaware_rate_limits"))
+    with pool.connection() as connection:
+        row = connection.execute(
+            statement, [str(bucket), str(identity), int(window_seconds), int(window_seconds)]
+        ).fetchone()
+    return int(row["hits"]) <= int(limit)
+
+
+def reset_rate_limit_state():
+    with _rate_limit_lock:
+        _rate_limit_memory.clear()
 
 
 def _pool_or_raise():
@@ -527,13 +565,6 @@ def _pool_or_raise():
         raise StorageUnavailable("Supabase Postgres is not available.")
     return _pool
 
-
-@contextmanager
-def transaction():
-    pool = _pool_or_raise()
-    with pool.connection() as connection:
-        with connection.transaction():
-            yield connection
 
 
 def _normalize_sort(sort):

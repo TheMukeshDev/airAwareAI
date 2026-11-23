@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Calculator, Leaf } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
@@ -9,6 +9,8 @@ import { Progress } from "../components/common/Progress";
 import { Badge } from "../components/common/Badge";
 import { DataNote } from "../components/common/DataNote";
 import { LoadingBlock } from "../components/common/Spinner";
+import { ErrorState } from "../components/common/ErrorState";
+import { useAsyncResource } from "../hooks/useAsyncResource";
 import { SimpleBarChart } from "../components/charts/Charts";
 import { lifestyleApi, apiError } from "../services/api";
 import { formatNumber, cn } from "../lib/utils";
@@ -41,42 +43,36 @@ const EMPTY_FORM = {
 };
 
 export function Lifestyle() {
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [loading, setLoading] = useState(true);
-  const [analysis, setAnalysis] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [draftAnalysis, setDraftAnalysis] = useState(null);
   const [saving, setSaving] = useState(false);
+  const profile = useAsyncResource(() => lifestyleApi.get(), [], {
+    fallback: "Could not load your lifestyle profile.",
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    lifestyleApi
-      .get()
-      .then((data) => {
-        if (cancelled) return;
-        const profile = data.profile ?? data.lifestyle ?? null;
-        if (profile) {
-          const flat = profile.flat ?? profile;
-          setForm((current) => ({ ...current, ...flat, waste: flat.waste ?? current.waste ?? [] }));
-        }
-        if (data.analysis) setAnalysis(data.analysis);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const saved = profile.data?.profile ?? profile.data?.lifestyle ?? null;
+  const savedFlat = saved ? saved.flat ?? saved : null;
+  const form = useMemo(
+    () => ({
+      ...EMPTY_FORM,
+      ...(savedFlat ?? {}),
+      waste: savedFlat?.waste ?? EMPTY_FORM.waste,
+      ...(draft ?? {}),
+    }),
+    [savedFlat, draft],
+  );
+  const analysis = draftAnalysis ?? profile.data?.analysis ?? null;
 
-  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const set = (key, value) => setDraft((current) => ({ ...(current ?? {}), [key]: value }));
 
   const toggleWaste = (value) =>
-    setForm((current) => ({
-      ...current,
-      waste: current.waste.includes(value)
-        ? current.waste.filter((entry) => entry !== value)
-        : [...current.waste, value],
-    }));
+    setDraft((current) => {
+      const waste = current?.waste ?? form.waste;
+      return {
+        ...(current ?? {}),
+        waste: waste.includes(value) ? waste.filter((entry) => entry !== value) : [...waste, value],
+      };
+    });
 
   const payload = () => ({
     transport: {
@@ -116,7 +112,7 @@ export function Lifestyle() {
     setSaving(true);
     try {
       const data = await lifestyleApi.analyze(payload());
-      setAnalysis(data.analysis ?? data);
+      setDraftAnalysis(data.analysis ?? data);
       toast.success("Lifestyle analysis updated.");
     } catch (error) {
       toast.error(apiError(error, "Could not analyze your lifestyle."));
@@ -270,7 +266,9 @@ export function Lifestyle() {
         </div>
 
         <div className="space-y-4">
-          {loading ? (
+          {profile.error ? (
+            <ErrorState message={profile.error} onRetry={profile.reload} retryLabel="Retry profile" />
+          ) : profile.loading ? (
             <LoadingBlock label="Loading your profile" />
           ) : analysis ? (
             <>

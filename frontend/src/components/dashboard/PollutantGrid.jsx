@@ -15,9 +15,9 @@ export function PollutantGrid({ pollutants, units = {}, className }) {
             </div>
             <p className="mt-1.5 font-display text-[17px] font-semibold tabular-nums text-white">
               {value === null || value === undefined ? "—" : formatNumber(value, { maximumFractionDigits: decimals })}
-              <span className="ml-1 text-[10px] font-normal text-slate-400">{units[key] ?? unit}</span>
+              <span className="ml-1 text-[11px] font-normal text-slate-300">{units[key] ?? unit}</span>
             </p>
-            <p className="mt-0.5 truncate text-[10.5px] text-slate-400">{note}</p>
+            <p className="mt-0.5 truncate text-[11px] text-slate-300">{note}</p>
           </div>
         );
       })}

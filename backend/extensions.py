@@ -1,4 +1,3 @@
-import logging
 import threading
 import time
 
@@ -9,17 +8,15 @@ from flask_limiter import Limiter
 
 import db as database
 
-logger = logging.getLogger(__name__)
 jwt = JWTManager()
 
 
 def _client_ip():
-    for header in ("X-Real-IP", "X-Forwarded-For", "X-Vercel-Forwarded-For"):
-        value = request.headers.get(header, "")
-        for candidate in value.split(","):
-            candidate = candidate.strip()
-            if candidate:
-                return candidate
+    value = request.headers.get("X-Vercel-Forwarded-For", "")
+    for candidate in value.split(","):
+        candidate = candidate.strip()
+        if candidate:
+            return candidate
     return request.remote_addr or "unknown"
 
 
@@ -39,6 +36,8 @@ limiter = Limiter(key_func=_rate_limit_key, default_limits=[])
 
 
 class TokenDenylist:
+    """Process-local cache with a Postgres-backed source of truth when configured."""
+
     def __init__(self):
         self._entries = {}
         self._lock = threading.Lock()
@@ -46,16 +45,24 @@ class TokenDenylist:
     def revoke(self, jti, expires_at=None):
         if not jti:
             return
+        key = str(jti)
+        expiry = float(expires_at) if expires_at else time.time() + 12 * 3600
         with self._lock:
-            self._entries[str(jti)] = float(expires_at) if expires_at else time.time() + 12 * 3600
+            self._entries[key] = expiry
             self._prune_locked()
+        if database.storage_mode() == "supabase":
+            database.revoke_token(key, expiry)
 
     def is_revoked(self, jti):
         if not jti:
             return False
+        key = str(jti)
         with self._lock:
             self._prune_locked()
-            return str(jti) in self._entries
+            local = key in self._entries
+        if database.storage_mode() == "supabase":
+            return database.is_token_revoked(key) or local
+        return local
 
     def _prune_locked(self):
         now = time.time()

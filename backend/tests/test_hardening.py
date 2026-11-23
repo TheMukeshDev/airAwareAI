@@ -128,8 +128,8 @@ def test_postgres_table_identifier_is_schema_qualified():
     assert "sql.Identifier(TABLE)" not in Path(database.__file__).read_text()
 
 
-def test_rate_limit_key_uses_forwarded_client_ip(app):
-    with app.test_request_context(headers={"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}):
+def test_rate_limit_key_uses_platform_forwarded_client_ip(app):
+    with app.test_request_context(headers={"X-Vercel-Forwarded-For": "203.0.113.9, 10.0.0.1"}):
         assert _rate_limit_key() == "ip:203.0.113.9"
 
 
@@ -138,7 +138,7 @@ def test_register_limit_is_per_client_ip(client):
     for index in range(4):
         response = client.post(
             "/api/auth/register",
-            headers={"X-Forwarded-For": f"203.0.113.{index + 1}"},
+            headers={"X-Vercel-Forwarded-For": f"203.0.113.{index + 1}"},
             json={
                 "name": f"Signup {index}",
                 "email": f"signup-{index}@airaware.app",

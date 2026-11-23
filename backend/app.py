@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import uuid
@@ -19,6 +20,7 @@ from routes.daily_plan import daily_plan_bp
 from routes.impact import impact_bp
 from routes.indoor_air import indoor_bp
 from routes.lifestyle import lifestyle_bp
+from routes.map_tiles import map_tiles_bp
 from routes.profile import profile_bp
 from services import gemini_service
 
@@ -34,6 +36,7 @@ BLUEPRINTS = (
     (impact_bp, "/api"),
     (assistant_bp, "/api"),
     (community_bp, "/api"),
+    (map_tiles_bp, "/api/map/tiles"),
 )
 
 ROUTE_LIMITS = {
@@ -43,7 +46,17 @@ ROUTE_LIMITS = {
     "air_quality.current": "60/minute",
     "air_quality.forecast": "60/minute",
     "air_quality.stations": "30/minute",
+    "daily_plan.generate_plan": "10/hour;30/day",
+    "indoor.create_assessment": "20/hour;60/day",
+    "community.stats": "60/minute",
+    "community.challenges": "60/minute",
+    "community.join": "20/minute",
+    "community.leaderboard": "60/minute",
+    "map_tiles.tile": "300/minute",
 }
+PUBLIC_CACHE_ENDPOINTS = frozenset(
+    {"air_quality.current", "air_quality.forecast", "air_quality.stations"}
+)
 _LIMIT_BASE = {}
 
 
@@ -124,6 +137,15 @@ def create_app(config_object=Config):
                 "Content-Security-Policy",
                 "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
             )
+        if response.status_code == 200 and request.endpoint in PUBLIC_CACHE_ENDPOINTS:
+            visibility = "private" if request.headers.get("Authorization") else "public"
+            ttl = int(app.config.get("CACHE_TTL_SECONDS", 600))
+            response.headers["Cache-Control"] = f"{visibility}, max-age={ttl}"
+            etag = '"' + hashlib.sha256(response.get_data()).hexdigest() + '"'
+            response.headers["ETag"] = etag
+            if request.headers.get("If-None-Match") == etag:
+                response.status_code = 304
+                response.set_data(b"")
         return response
 
     @app.get("/api/health")

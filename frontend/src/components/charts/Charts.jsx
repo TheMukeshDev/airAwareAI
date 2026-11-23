@@ -6,7 +6,6 @@
   CartesianGrid,
   Cell,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -124,17 +123,5 @@ export function SimpleBarChart({ data, dataKey = "value", unit, height = 200, co
   );
 }
 
-export function Sparkline({ data, color = "#3fe0ac", height = 46 }) {
-  const safeData = data ?? [];
-  return (
-    <div aria-hidden="true">
-      <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={safeData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-          <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.8} dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
 
 export default TrendChart;

@@ -1,7 +1,7 @@
 ﻿import { cn } from "../../lib/utils";
 
 export function Card({ className, as: Component = "section", ...props }) {
-  return <Component className={cn("surface p-5 sm:p-6", className)} {...props} />;
+  return <Component className={cn("surface p-4 sm:p-5", className)} {...props} />;
 }
 
 export function CardHeader({ className, children, action, ...props }) {

@@ -29,6 +29,10 @@ if (!globalThis.scrollTo) {
   globalThis.scrollTo = () => {};
 }
 
+if (globalThis.HTMLElement && !globalThis.HTMLElement.prototype.scrollIntoView) {
+  globalThis.HTMLElement.prototype.scrollIntoView = () => {};
+}
+
 if (globalThis.HTMLCanvasElement) {
   globalThis.HTMLCanvasElement.prototype.getContext = () => null;
 }

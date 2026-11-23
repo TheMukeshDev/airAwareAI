@@ -72,19 +72,3 @@ def pagination(default_per_page=10, max_per_page=50):
     per_page = max(1, min(per_page, max_per_page))
     return page, per_page
 
-
-def coords_from_request(default_lat=25.4358, default_lng=81.8463):
-    try:
-        latitude = float(request.args.get("latitude", default_lat))
-    except (TypeError, ValueError):
-        latitude = default_lat
-    try:
-        longitude = float(request.args.get("longitude", default_lng))
-    except (TypeError, ValueError):
-        longitude = default_lng
-    latitude = max(-90.0, min(90.0, latitude))
-    longitude = max(-180.0, min(180.0, longitude))
-    scale = request.args.get("scale", "us")
-    if scale not in {"us", "india"}:
-        scale = "us"
-    return latitude, longitude, scale

@@ -30,11 +30,6 @@ def ensure_json_object(data, failure_builder=None):
     return data, None
 
 
-def require_string(value, name):
-    if not isinstance(value, str):
-        return None, error(f"{name} must be a string.", 422)
-    return value, None
-
 
 def finite_number(value, name):
     try:

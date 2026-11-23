@@ -7,9 +7,10 @@ const priorities = {
   low: { label: "Optional", className: "border-white/12 bg-white/5 text-slate-400" },
 };
 
-export function RecommendationItem({ item, onToggle, busy, index = 0 }) {
+function RecommendationItem({ item, onToggle, busy, index = 0 }) {
   const completed = Boolean(item.completed);
   const priority = priorities[item.priority] ?? priorities.medium;
+  const title = typeof item.title === "string" && item.title.trim() ? item.title : "Action";
   return (
     <li
       className={cn(
@@ -24,7 +25,7 @@ export function RecommendationItem({ item, onToggle, busy, index = 0 }) {
         onClick={() => onToggle?.(item)}
         disabled={busy || !onToggle}
         aria-pressed={completed}
-        aria-label={completed ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
+        aria-label={completed ? `Mark ${title} as not done` : `Mark ${title} as done`}
         className={cn(
           "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all",
           completed
@@ -37,7 +38,7 @@ export function RecommendationItem({ item, onToggle, busy, index = 0 }) {
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className={cn("text-[13.5px] font-medium text-slate-100", completed && "line-through")}>{item.title}</p>
+          <p className={cn("text-[13.5px] font-medium text-slate-100", completed && "line-through")}>{title}</p>
           <span className={cn("rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider", priority.className)}>
             {priority.label}
           </span>

@@ -3,6 +3,7 @@
 from flask import Blueprint, jsonify, request
 
 from extensions import find_user, indoor_assessments
+from security import shared_rate_limit
 from services import indoor_engine
 from services.air_lookup import air_for_user
 from utils.http import error, now_utc, require_auth
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 @indoor_bp.post("/indoor/assessment")
 @require_auth
+@shared_rate_limit("indoor.assessment", 30, 3600)
 def create_assessment(user_id):
     data = request.get_json(silent=True)
     data, failure = ensure_json_object(data)

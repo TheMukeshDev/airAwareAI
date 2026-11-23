@@ -5,10 +5,7 @@ import { classifyAqi } from "../../lib/aqi";
 import { formatNumber } from "../../lib/utils";
 import { DEFAULT_COORDS } from "../../lib/constants";
 
-const CARTO_API_KEY = import.meta.env.VITE_CARTO_API_KEY || "";
-const TILE_URL = CARTO_API_KEY
-  ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(CARTO_API_KEY)}`
-  : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_URL = "/api/map/tiles/dark_all/{z}/{x}/{y}.png";
 
 function Recenter({ center }) {
 
@@ -30,7 +27,7 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
     <div
       className="overflow-hidden rounded-2xl border border-hairline"
       style={{ height }}
-      role="img"
+      role="region"
       aria-label={`${label}. Use the station list below for detailed readings.`}
     >
       <MapContainer
@@ -44,7 +41,6 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
           url={TILE_URL}
 
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
           maxZoom={19}
         />
         <Recenter center={{ latitude: lat, longitude: lng }} />
@@ -67,11 +63,11 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
               <Popup>
                 <div className="min-w-[150px]">
                   <p className="text-[12.5px] font-semibold text-white">{station.name}</p>
-                  <p className="mt-1 text-[11.5px] text-slate-400">
+                  <p className="mt-1 text-[12px] text-slate-300">
                     AQI {station.aqi ?? "—"} · {category.label}
                   </p>
                   {station.pm2_5 !== undefined ? (
-                    <p className="mt-0.5 text-[11px] text-slate-400">PM2.5 {formatNumber(station.pm2_5)} µg/m³</p>
+                    <p className="mt-0.5 text-[12px] text-slate-300">PM2.5 {formatNumber(station.pm2_5)} µg/m³</p>
                   ) : null}
                 </div>
               </Popup>
@@ -84,7 +80,7 @@ export function StationMap({ center, stations = [], height = 380, activeId, onSe
           pathOptions={{ color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 0.9, weight: 2 }}
         >
           <Popup>
-            <span className="text-[11.5px] text-slate-200">Your selected location</span>
+            <span className="text-[12px] text-slate-200">Your selected location</span>
           </Popup>
         </CircleMarker>
       </MapContainer>

@@ -21,6 +21,7 @@ export function Login() {
 
   const update = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
+
   const submit = async (event) => {
     event?.preventDefault();
     const nextErrors = {};
@@ -93,18 +94,9 @@ export function Login() {
           </button>
         </div>
 
-        <div className="flex items-center justify-between text-[12px]">
-          <span className="text-slate-400">ProtectedRoute checks are client-side only.</span>
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            className="cursor-not-allowed text-slate-400 opacity-60"
-            title="Password reset coming soon"
-          >
-            Forgot password (coming soon)
-          </button>
-        </div>
+        <p className="text-[12px] text-slate-300">
+          Protected pages require a signed-in session.
+        </p>
 
         <Button type="submit" className="w-full" loading={submitting} size="lg">
           {!submitting ? <LogIn size={16} aria-hidden="true" /> : null}

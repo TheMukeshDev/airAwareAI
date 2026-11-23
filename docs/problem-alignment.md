@@ -1,0 +1,54 @@
+# Problem alignment and submission evidence
+
+This document maps the AirAware AI problem and the likely evaluation criteria to implemented files and features. No external judging rubric was supplied with the task, so the criteria below are inferred from the repository, README and existing documentation. Nothing here should be read as an official scorecard.
+
+Run commands from the repository root unless a step says otherwise.
+
+## Problem requirements to implementation
+
+| Problem requirement | Concrete implementation | Known limitation |
+| --- | --- | --- |
+| Environmental intelligence for Indian cities | `README.md`, `docs/data-and-limitations.md`, `frontend/src/pages/Landing.jsx`, `frontend/src/pages/Dashboard.jsx`, `backend/services/aqi_service.py` | Default coordinates and example location in tests are Prayagraj; the app accepts any latitude/longitude but is framed for India. |
+| Live air quality with honest sourcing | `backend/services/aqi_service.py` (`fetch_air`, `fetch_weather`, TTL cache, stale fallback), `backend/routes/air_quality.py`, `frontend/src/lib/aqi.js`, `frontend/src/components/dashboard/AqiCard.jsx` | Data is CAMS model output for the nearest grid cell, not a street-level monitor. Provider failure with no cache returns `503` rather than invented values. |
+| US AQI and Indian AQI on both scales | `backend/services/aqi_service.py` (`cpcb_aqi`, `POLLUTANT_WINDOWS_HOURS`, `CPCB_BREAKPOINTS`), `frontend/src/lib/aqi.js`, `frontend/src/components/dashboard/AqiCard.jsx` | Indian AQI is computed from modelled trailing means and labelled `CPCB-style computed`; it can differ from an official CPCB bulletin. |
+| Forecast, exposure guidance and ventilation timing | `backend/services/aqi_service.py` (`get_forecast`, `_best_ventilation_window`, `_exposure`), `backend/routes/air_quality.py`, `frontend/src/pages/AirQuality.jsx`, `frontend/src/components/dashboard/RecommendationList.jsx` | Ventilation windows are modelled estimates. Exposure messages are indicative, not medical advice. |
+| Personal carbon and lifestyle tracking | `backend/routes/lifestyle.py`, `backend/services/impact_calculator.py`, `backend/data/emission_factors_v1.json`, `frontend/src/pages/Lifestyle.jsx`, `frontend/src/pages/Impact.jsx` | `v1-dev` factors are documented placeholders; records are `verified: false` and must not be used for regulatory reporting. |
+| Exposure-aware daily plan | `backend/routes/daily_plan.py`, `backend/services/recommendation_engine.py`, `backend/services/gemini_service.py` (`enhance_plan`), `frontend/src/pages/DailyPlan.jsx` | Gemini is required; missing key or provider failure returns `503`. Numeric tokens are checked against computed context before rewritten text is accepted. |
+| Indoor air guidance | `backend/routes/indoor_air.py`, `backend/services/indoor_engine.py`, `frontend/src/pages/IndoorAir.jsx` | Questionnaire produces an indicative score, not a measurement. Gemini enhancement is optional and failures fall back to rule-based wording. |
+| Grounded assistant with sources | `backend/routes/assistant.py`, `backend/services/gemini_service.py` (`chat`, `SYSTEM_PROMPT`, `ChatResponse`), `frontend/src/pages/Assistant.jsx` | No RAG/embeddings or web retrieval at query time. It receives a compact current-air and profile context. Requires `GEMINI_API_KEY`; returns `503` when unavailable. |
+| Community motivation without exposing individuals | `backend/routes/community.py`, `backend/services/community_service.py`, `frontend/src/pages/Community.jsx` | Only aggregates and an opt-in leaderboard are returned. No community data is seeded. |
+| Accounts, onboarding, profile and settings | `backend/extensions.py`, `backend/routes/auth.py`, `backend/routes/profile.py`, `frontend/src/context/AuthProvider.jsx`, `frontend/src/components/layout/ProtectedRoute.jsx`, `frontend/src/pages/Onboarding.jsx`, `frontend/src/pages/Settings.jsx` | No seeded demo user. Evaluators must register and complete onboarding. |
+| Map with server-side map key | `backend/config.py`, `backend/routes/map_tiles.py`, `frontend/src/components/map/StationMap.jsx` | `CARTO_API_KEY` is backend-only; there is no `VITE_CARTO_API_KEY`. Tile proxy returns `502` on upstream failure. Basemap appearance depends on the external CARTO service. |
+| Persistence and shared state | `backend/db.py`, `supabase/migrations/20261118000000_airaware_documents.sql`, `supabase/migrations/20261119000000_shared_state_and_impact_indexes.sql` | Production requires `SUPABASE_DB_URL`. The memory store is for tests only. If Supabase is unavailable, token-denylist and rate-limit counters fall back to per-instance memory. |
+| Security and abuse resistance | `backend/app.py`, `backend/security.py`, `backend/extensions.py`, `backend/tests/test_hardening.py`, `backend/tests/test_security_targets.py` | Rate limiting depends on configuration and shared storage; process-local fallback does not coordinate across serverless instances. |
+| Accessibility and resilient UI states | `frontend/src/__tests__/a11y.test.jsx`, `frontend/src/components/common/ErrorState.jsx`, `frontend/src/components/common/ErrorBoundary.jsx`, `frontend/src/components/common/LiveAnnouncer.jsx`, `frontend/src/index.css` | Automated axe coverage is limited to the rendered states in jsdom; it is not a full manual WCAG audit. |
+| Deployment and documentation | `vercel.json`, `README.md`, `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `docs/submission-answers.md` | Deployment availability is controlled by Vercel and upstream providers. GitHub Actions runs are not verified from this workspace; only YAML parsing and local command equivalents were run here. |
+
+## Likely evaluation criteria to evidence
+
+| Likely criterion | Evidence in the repository | Evidence command or check | Limitation |
+| --- | --- | --- | --- |
+| Problem relevance and real-world impact | The product addresses urban air exposure, indoor air, low-carbon choices and community motivation in `README.md` and the screens in `frontend/src/pages/`. | `Get-Content README.md`; open the deployed URL from `README.md`. | No user study or verified emissions impact is included. |
+| Functionality and completeness | Routes in `backend/app.py`; screens in `frontend/src/App.jsx`; feature tests in `backend/tests/` and `frontend/src/__tests__/`. | `cd backend; pytest -q`; `cd frontend; npm run test; npm run build` | No end-to-end browser test suite is present. |
+| Use of generative AI | `backend/services/gemini_service.py`, `backend/services/recommendation_engine.py`, `backend/services/indoor_engine.py`, `backend/routes/assistant.py`. | `cd backend; pytest -q tests/test_app.py`; search for `generated_by` and `GeminiUnavailable` in the service files. | Only Gemini text generation is used; no image, audio, embedding or RAG pipeline. |
+| Grounding and data honesty | `docs/data-and-limitations.md`, `backend/services/aqi_service.py`, `backend/data/emission_factors_v1.json`, `frontend/src/components/common/DataNote.jsx`. | `Get-Content docs/data-and-limitations.md`; `cd backend; pytest -q` | Emission factors remain development placeholders; Indian AQI is a computed estimate. |
+| Technical execution and architecture | Flask app factory with blueprints in `backend/app.py`; adapter in `backend/db.py`; Vite SPA in `frontend/src/`; serverless routing in `vercel.json`. | `cd backend; ruff check .`; `cd frontend; npm run lint; npm run build` | No architecture diagram or ADR set is committed. |
+| Security and privacy | Security headers, CORS guard, production secret check and rate limits in `backend/app.py`; shared guards in `backend/security.py`; RLS migrations under `supabase/migrations/`; server-side map key in `backend/routes/map_tiles.py`. | `cd backend; pytest -q tests/test_security_targets.py tests/test_hardening.py`; `bandit -q -c bandit.yaml -r .` | Gitleaks may require an organization license secret; its GitHub run has not been observed from this workspace. |
+| UX, responsiveness and accessibility | Shared components in `frontend/src/components/common/` and `frontend/src/components/layout/`; axe checks in `frontend/src/__tests__/a11y.test.jsx`; responsive CSS in `frontend/src/index.css`. | `cd frontend; npm run test:a11y` | Automated checks are not a substitute for manual keyboard/screen-reader review. |
+| Testing and CI quality | `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `backend/pyproject.toml`, `backend/bandit.yaml`, `frontend/package-lock.json`. | `python -c "import pathlib, yaml; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in pathlib.Path('.github/workflows').glob('*.yml')]; print('workflow YAML OK')"` | CI has not been run on GitHub from this workspace. |
+| Deployment readiness | `vercel.json`, live URL and setup notes in `README.md`, `/api/health` in `backend/app.py`. | Open `https://airaware-ai-sigma.vercel.app/api/health` from `README.md`. | Live service state is external to the repository. |
+| Documentation and submission completeness | `README.md`, this file, `docs/data-and-limitations.md`, `docs/submission-answers.md`, `LICENSE` (MIT). | `git status --short`; `git check-ignore --no-index -v .env.example backend/.env.example frontend/.env.example` (no output means trackable). | GitHub, video and LinkedIn URLs are intentionally user-supplied placeholders. |
+| Creativity and presentation | Combined air-exposure and carbon planning flow, grounded assistant, server-side tile proxy and honesty labelling across `frontend/src/pages/` and backend services. | Follow the evaluator walkthrough in `README.md`. | No recorded demo or screenshot set is committed. |
+
+## Consolidated known limitations
+
+- No seeded demo user or sample community data; evaluators must register.
+- No `/api/docs` route is implemented in the current Flask app.
+- Air quality is modelled grid data, not street-level measurement; computed Indian AQI is not an official bulletin.
+- Emission factors are `v1-dev` placeholders and all impact records are unverified estimates.
+- Gemini is required for chat and daily-plan wording; failure returns `503` rather than a fallback answer.
+- Rate-limit and revocation state fall back to process-local memory if Supabase is unavailable.
+- The map key is server-side only; the proxy depends on CARTO availability and may return `502`.
+- CI workflows are syntax-checked locally, but their GitHub runs were not observed while writing this document.
+- Gitleaks is pinned to an action commit SHA; organization-owned repositories may need the `GITLEAKS_LICENSE` encrypted secret.
+- GitHub, video and LinkedIn URLs in the submission materials are placeholders to be replaced by the user.

@@ -6,7 +6,7 @@
  * different scales and must never be merged into a single unlabelled number.
  */
 
-export const US_AQI_BANDS = [
+const US_AQI_BANDS = [
   { max: 50, label: "Good", tone: "good", health: "Air quality is satisfactory." },
   { max: 100, label: "Moderate", tone: "moderate", health: "Acceptable; sensitive groups may notice effects." },
   { max: 150, label: "Unhealthy for sensitive groups", tone: "poor", health: "Sensitive groups should limit prolonged outdoor exertion." },
@@ -15,7 +15,7 @@ export const US_AQI_BANDS = [
   { max: Infinity, label: "Hazardous", tone: "severe", health: "Emergency conditions: stay indoors where possible." },
 ];
 
-export const INDIA_AQI_BANDS = [
+const INDIA_AQI_BANDS = [
   { max: 50, label: "Good", tone: "good", health: "Minimal impact." },
   { max: 100, label: "Satisfactory", tone: "good", health: "Minor breathing discomfort for sensitive people." },
   { max: 200, label: "Moderate", tone: "moderate", health: "Breathing discomfort for people with lung or heart disease." },

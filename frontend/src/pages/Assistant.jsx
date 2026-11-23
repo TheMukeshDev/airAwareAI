@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Bot, ShieldCheck, Sparkles, User } from "lucide-react";
 import toast from "react-hot-toast";
 import { PageHeader } from "../components/common/PageHeader";
@@ -6,6 +6,8 @@ import { Button } from "../components/common/Button";
 import { Badge } from "../components/common/Badge";
 import { Card, CardDescription, CardHeader, CardTitle } from "../components/common/Card";
 import { DataNote } from "../components/common/DataNote";
+import { ErrorState } from "../components/common/ErrorState";
+import { useAsyncResource } from "../hooks/useAsyncResource";
 import { useAuth } from "../context/AuthContext";
 
 import { useAirQuality, useUserCoords } from "../hooks/useAirQuality";
@@ -34,39 +36,31 @@ export function Assistant() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(true);
   const [chatError, setChatError] = useState(null);
   const bottomRef = useRef(null);
   const sendingRef = useRef(false);
   const category = classifyAqi(reading?.aqi ?? null, reading?.scale ?? "us");
 
 
-  useEffect(() => {
-    let cancelled = false;
-    assistantApi
-      .history()
-      .then((data) => {
-        if (cancelled) return;
-        const stored = (data.messages ?? []).map((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          sources: message.sources,
-        }));
-        setMessages(stored);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoadingHistory(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const history = useAsyncResource(
+    async () => {
+      const data = await assistantApi.history();
+      return (data.messages ?? []).map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        sources: message.sources,
+      }));
+    },
+    [],
+    { initialData: [], fallback: "Could not load your chat history." },
+  );
+
+  const displayMessages = useMemo(() => [...(history.data ?? []), ...messages], [history.data, messages]);
 
   useEffect(() => {
     scrollToBottom(bottomRef.current);
-  }, [messages, sending]);
+  }, [displayMessages, sending]);
 
   const send = async (text) => {
     const content = (text ?? input).trim();
@@ -110,7 +104,13 @@ export function Assistant() {
 
   };
 
-  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && !m.error);
+  const retryLast = () => {
+    const lastUser = [...displayMessages].reverse().find((message) => message.role === "user");
+    setMessages((current) => current.filter((message) => message.id !== lastUser?.id && !message.error));
+    if (lastUser) send(lastUser.content);
+  };
+
+  const lastAssistant = [...displayMessages].reverse().find((m) => m.role === "assistant" && !m.error);
   const schemaValidated = Boolean(lastAssistant?.schemaValidated);
 
   return (
@@ -129,7 +129,7 @@ export function Assistant() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
-        <Card className="flex h-[calc(100vh-330px)] min-h-[460px] flex-col p-0" aria-busy={sending || loadingHistory}>
+        <Card className="flex h-[calc(100vh-330px)] min-h-[460px] flex-col p-0" aria-busy={sending || history.loading}>
           <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
             <div className="flex items-center gap-2.5">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-aurora-400/25 to-glow-400/15 text-aurora-300" aria-hidden="true">
@@ -146,13 +146,19 @@ export function Assistant() {
           </div>
 
           {chatError ? (
-            <div role="alert" className="border-b border-verypoor/25 bg-verypoor/[0.06] px-4 py-2 text-[12px] text-verypoor/90">
-              {chatError}
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-verypoor/25 bg-verypoor/[0.06] px-4 py-2 text-[12px] text-verypoor/90">
+              <span>{chatError}</span>
+              <Button type="button" variant="secondary" size="sm" onClick={retryLast}>
+                Retry
+              </Button>
             </div>
           ) : null}
 
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4" role="log" aria-live="polite" aria-relevant="additions">
-            {!messages.length && !loadingHistory ? (
+            {history.error ? (
+              <ErrorState message={history.error} onRetry={history.reload} retryLabel="Retry history" />
+            ) : null}
+            {!displayMessages.length && !history.loading && !history.error ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-aurora-400/25 bg-aurora-400/10 text-aurora-300" aria-hidden="true">
                   <Sparkles size={20} />
@@ -167,7 +173,7 @@ export function Assistant() {
               </div>
             ) : null}
 
-            {messages.map((message) => (
+            {displayMessages.map((message) => (
               <div
                 key={message.id}
                 className={cn("flex gap-2.5", message.role === "user" ? "flex-row-reverse" : "")}
@@ -244,7 +250,7 @@ export function Assistant() {
           </div>
 
           <div className="border-t border-hairline p-3">
-            {messages.length === 0 ? (
+            {displayMessages.length === 0 ? (
               <div className="no-scrollbar mb-2 flex gap-2 overflow-x-auto">
                 {SUGGESTIONS.slice(0, 3).map((question) => (
                   <button
@@ -280,7 +286,7 @@ export function Assistant() {
                   }
                 }}
                 placeholder="Ask about today's air, your commute or your kitchen…"
-                className="max-h-28 min-h-[42px] flex-1 resize-none rounded-xl border border-hairline bg-ink-900/80 px-3.5 py-2.5 text-[12.5px] text-slate-100 placeholder:text-slate-400 focus:border-aurora-400/60 focus:outline-none"
+                className="max-h-28 min-h-[42px] flex-1 resize-none rounded-xl border border-hairline bg-ink-900/80 px-3.5 py-2.5 text-[12.5px] text-slate-100 placeholder:text-slate-400 focus:border-aurora-400/60"
               />
               <Button type="submit" size="icon" disabled={!input.trim() || sending} aria-label="Send message">
                 <ArrowUp size={16} aria-hidden="true" />

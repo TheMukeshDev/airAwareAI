@@ -9,8 +9,19 @@ let inflightCurrent = null;
 let inflightKey = null;
 const CURRENT_TTL_MS = 60_000;
 
+let forecastCache = null;
+let forecastCacheKey = null;
+let forecastCacheAt = 0;
+let inflightForecast = null;
+let inflightForecastKey = null;
+const FORECAST_TTL_MS = 60_000;
+
 function keyFor(lat, lon) {
   return `${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
+}
+
+function forecastKeyFor(lat, lon, hours) {
+  return `${keyFor(lat, lon)}:${hours}`;
 }
 
 export function useAirQuality(coords) {
@@ -90,33 +101,69 @@ export function useAirQuality(coords) {
 export function useForecast(coords, hours = 24) {
   const latitude = coords?.latitude ?? DEFAULT_COORDS.latitude;
   const longitude = coords?.longitude ?? DEFAULT_COORDS.longitude;
-  const [state, setState] = useState({ data: null, loading: true, error: null });
+  const [state, setState] = useState({ data: null, loading: true, refreshing: false, error: null });
+  const mountedRef = useRef(true);
+  const requestRef = useRef(0);
 
-  const load = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: null }));
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
+
+  const load = useCallback(async (force = false) => {
+    const k = forecastKeyFor(latitude, longitude, hours);
+    const generation = ++requestRef.current;
+    const commit = (next) => {
+      if (mountedRef.current && generation === requestRef.current) setState(next);
+    };
+    const now = Date.now();
+    if (!force && forecastCache && forecastCacheKey === k && now - forecastCacheAt < FORECAST_TTL_MS) {
+      commit({ data: forecastCache, loading: false, refreshing: false, error: null });
+      return;
+    }
+
+    commit((current) => ({
+      ...current,
+      loading: current.data === null,
+      refreshing: current.data !== null,
+      error: null,
+    }));
+
     try {
-      const data = await airQualityApi.forecast({ latitude, longitude, hours });
-      return { data, error: null };
+      if (!force && inflightForecast && inflightForecastKey === k) {
+        const data = await inflightForecast;
+        commit({ data, loading: false, refreshing: false, error: null });
+        return;
+      }
+
+      const request = airQualityApi.forecast({ latitude, longitude, hours });
+      inflightForecast = request;
+      inflightForecastKey = k;
+      const data = await request;
+      forecastCache = data;
+      forecastCacheKey = k;
+      forecastCacheAt = Date.now();
+      commit({ data, loading: false, refreshing: false, error: null });
     } catch (error) {
-      return { data: null, error: apiError(error, "Forecast is unavailable right now.") };
+      commit((current) => ({
+        data: current.data,
+        loading: false,
+        refreshing: false,
+        error: apiError(error, "Forecast is unavailable right now."),
+      }));
+    } finally {
+      if (inflightForecastKey === k) {
+        inflightForecast = null;
+        inflightForecastKey = null;
+      }
     }
   }, [latitude, longitude, hours]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const result = await load();
-      if (!cancelled) setState({ data: result.data, loading: false, error: result.error });
-    })();
-    return () => {
-      cancelled = true;
-    };
+    mountedRef.current = true;
+    Promise.resolve().then(() => load());
   }, [load]);
 
-  const refresh = useCallback(async () => {
-    const result = await load();
-    setState({ data: result.data, loading: false, error: result.error });
-  }, [load]);
+  const refresh = useCallback(() => load(true), [load]);
 
   return { ...state, refresh };
 }

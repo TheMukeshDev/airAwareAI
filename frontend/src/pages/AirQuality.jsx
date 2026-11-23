@@ -152,7 +152,7 @@ export function AirQuality() {
               label="Nearby air quality reference points map"
             />
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-400">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300">
             <span className="inline-flex items-center gap-1.5">
               <MapPinned size={11} aria-hidden="true" />
               {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}
@@ -175,28 +175,28 @@ export function AirQuality() {
             </CardHeader>
             <div className="mt-4 grid grid-cols-2 gap-2.5">
               <div className="rounded-xl border border-hairline bg-ink-900/60 p-3">
-                <p className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400">AQI</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">AQI</p>
                 <p className={cn("mt-1 font-display text-[22px] font-semibold tabular-nums", category.style.text)}>
                   {scaleUnavailable ? "—" : Math.round(displayAqi)}
                 </p>
-                {scaleUnavailable ? <p className="text-[10px] text-slate-400">Unavailable</p> : null}
+                {scaleUnavailable ? <p className="text-[11px] text-slate-300">Unavailable</p> : null}
               </div>
               <div className="rounded-xl border border-hairline bg-ink-900/60 p-3">
-                <p className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400">PM2.5</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">PM2.5</p>
                 <p className="mt-1 font-display text-[22px] font-semibold tabular-nums text-white">
                   {formatNumber(reading?.pollutants?.pm2_5)}
                 </p>
-                <p className="text-[10px] text-slate-400">µg/m³</p>
+                <p className="text-[11px] text-slate-300">µg/m³</p>
               </div>
             </div>
             {scaleUnavailable ? (
-              <p className="mt-3 text-[11.5px] leading-relaxed text-slate-400">
+              <p className="mt-3 text-[12px] leading-relaxed text-slate-300">
                 {aqiScaleLabel(scale)} is not available for this reading. Switch scales or check back later.
               </p>
             ) : (
-              <p className="mt-3 text-[11.5px] leading-relaxed text-slate-400">{category.health}</p>
+              <p className="mt-3 text-[12px] leading-relaxed text-slate-300">{category.health}</p>
             )}
-            <div className="mt-3 space-y-1.5 text-[10.5px] text-slate-400">
+            <div className="mt-3 space-y-1.5 text-[11px] text-slate-300">
               <p className="inline-flex items-center gap-1.5">
                 <Clock3 size={11} aria-hidden="true" />
                 Observed {reading?.observed_at ? formatDateTime(reading.observed_at) : "—"} (
@@ -219,7 +219,7 @@ export function AirQuality() {
               <CardTitle as="h2" id="station-list-heading">Nearby reference points</CardTitle>
               <CardDescription>Sampled grid cells around your coordinates</CardDescription>
             </CardHeader>
-            <div className="mt-3 max-h-[188px] space-y-1.5 overflow-y-auto pr-1" role="list" aria-labelledby="station-list-heading">
+            <div className="mt-3 max-h-[188px] space-y-1.5 overflow-y-auto pr-1" role="group" aria-labelledby="station-list-heading">
               {stations.length ? (
                 stations.map((station) => {
                   const stationScale = station.scale ?? scale;
@@ -240,7 +240,7 @@ export function AirQuality() {
                     >
                       <div className="min-w-0">
                         <p className="truncate text-[12px] font-medium text-slate-100">{station.name}</p>
-                        <p className="truncate text-[10.5px] text-slate-400">
+                        <p className="truncate text-[11px] text-slate-300">
                           {aqiScaleLabel(stationScale)} · PM2.5 {formatNumber(station.pm2_5)} µg/m³ · {station.distance_km} km
                         </p>
                       </div>
@@ -251,7 +251,7 @@ export function AirQuality() {
                   );
                 })
               ) : (
-                <p className="text-[11.5px] leading-relaxed text-slate-400">
+                <p className="text-[12px] leading-relaxed text-slate-300">
                   No reference points were returned for this location.
                 </p>
               )}
@@ -282,7 +282,7 @@ export function AirQuality() {
               ariaLabel={`24 hour ${metric === "aqi" ? aqiScaleLabel(scale) : metric.toUpperCase()} forecast`}
             />
           ) : (
-            <div className="flex h-[210px] items-center justify-center text-[12px] text-slate-400">
+            <div className="flex h-[210px] items-center justify-center text-[12px] text-slate-300">
               {forecastLoading ? "Loading forecast…" : metric === "aqi" && scaleUnavailable ? `${aqiScaleLabel(scale)} unavailable.` : "Forecast unavailable."}
             </div>
           )}
@@ -294,13 +294,13 @@ export function AirQuality() {
               const c = classifyAqi(value, scale);
               return (
                 <div key={hour.time} className="min-w-[76px] shrink-0 rounded-xl border border-hairline bg-ink-900/60 px-2.5 py-2 text-center">
-                  <p className="text-[10.5px] text-slate-400">
+                  <p className="text-[11px] text-slate-300">
                     {new Date(hour.time).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                   </p>
                   <p className={cn("mt-1 font-display text-[15px] font-semibold tabular-nums", c.style.text)}>
                     {value ?? "—"}
                   </p>
-                  <p className="text-[9.5px] text-slate-400">{hour.pm2_5 ? `PM2.5 ${formatNumber(hour.pm2_5, { maximumFractionDigits: 0 })}` : "—"}</p>
+                  <p className="text-[11px] text-slate-300">{hour.pm2_5 ? `PM2.5 ${formatNumber(hour.pm2_5, { maximumFractionDigits: 0 })}` : "—"}</p>
                 </div>
               );
             })}
@@ -319,7 +319,7 @@ export function AirQuality() {
               <table className="w-full min-w-[420px] text-left text-[12px]">
                 <caption className="sr-only">Daily air quality outlook</caption>
                 <thead>
-                  <tr className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400">
+                  <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-300">
                     <th scope="col" className="pb-2 font-medium">Day</th>
                     <th scope="col" className="pb-2 font-medium">Max AQI</th>
                     <th scope="col" className="pb-2 font-medium">Avg PM2.5</th>
@@ -337,7 +337,7 @@ export function AirQuality() {
                         </td>
                         <td className="py-2.5 font-medium tabular-nums text-slate-100">{value ?? "—"}</td>
                         <td className="py-2.5 tabular-nums text-slate-400">
-                          {formatNumber(day.pm2_5_mean)} <span className="text-[10px] text-slate-400">µg/m³</span>
+                          {formatNumber(day.pm2_5_mean)} <span className="text-[11px] text-slate-300">µg/m³</span>
                         </td>
                         <td className={cn("py-2.5", c.style.text)}>{c.label}</td>
                       </tr>
@@ -346,7 +346,7 @@ export function AirQuality() {
                 </tbody>
               </table>
             ) : (
-              <p className="text-[12px] text-slate-400">Daily forecast unavailable.</p>
+              <p className="text-[12px] text-slate-300">Daily forecast unavailable.</p>
             )}
           </div>
         </Card>
@@ -363,10 +363,10 @@ export function AirQuality() {
             and never averages the two.
           </DataNote>
           <Card className="p-4">
-            <p className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400">Provenance</p>
-            <div className="mt-2 space-y-2 text-[11.5px] text-slate-400">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">Provenance</p>
+            <div className="mt-2 space-y-2 text-[11.5px] text-slate-300">
               <p className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Source</span>
+                <span className="text-slate-300">Source</span>
                 <span className="text-right text-slate-200">{reading?.source ?? "—"}</span>
               </p>
               <p className="flex items-center justify-between gap-3">
@@ -393,7 +393,7 @@ export function AirQuality() {
         </div>
       </div>
 
-      <p className="flex items-start gap-2 px-1 text-[10.5px] leading-relaxed text-slate-400">
+      <p className="flex items-start gap-2 px-1 text-[11px] leading-relaxed text-slate-300">
         <Info size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
         Health categories follow published AQI breakpoints for awareness only. For symptoms, follow guidance from a
         qualified health professional.

@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import {
   ArrowRight,
   Bike,
@@ -100,7 +99,7 @@ export function Landing() {
                 I already have an account
               </Button>
             </div>
-            <ul className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-slate-400">
+            <ul className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-slate-300">
               {["No invented readings", "Scale always labelled", "Estimated values marked"].map((item) => (
                 <li key={item} className="flex items-center gap-1.5">
                   <CheckCircle2 size={13} className="text-aurora-400" aria-hidden="true" />
@@ -110,7 +109,7 @@ export function Landing() {
             </ul>
           </div>
 
-          <div className="animate-rise space-y-3" style={{ animationDelay: "120ms" }}>
+          <div id="live-preview" className="animate-rise space-y-3" style={{ animationDelay: "120ms" }}>
             <div className="flex items-center justify-between rounded-xl border border-hairline bg-ink-900/70 px-3.5 py-2.5">
               <div className="flex items-center gap-2 text-[11.5px] text-slate-300">
                 <span className="relative flex h-2 w-2" aria-hidden="true">
@@ -119,7 +118,7 @@ export function Landing() {
                 </span>
                 Live preview · Prayagraj, India
               </div>
-              <span className="text-[10.5px] uppercase tracking-wider text-slate-400">Public · no sign-in</span>
+              <span className="text-[11px] uppercase tracking-wider text-slate-300">Public · no sign-in</span>
             </div>
             <AqiCard reading={data} loading={loading} error={error} onRefresh={refresh} />
             <div className="grid grid-cols-3 gap-2.5">
@@ -129,15 +128,15 @@ export function Landing() {
                 { label: "NO₂", value: data?.pollutants?.nitrogen_dioxide, unit: "µg/m³" },
               ].map((item) => (
                 <div key={item.label} className="surface px-3.5 py-3">
-                  <p className="text-[10.5px] uppercase tracking-[0.14em] text-slate-400">{item.label}</p>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">{item.label}</p>
                   <p className="mt-1 font-display text-[17px] font-semibold text-white tabular-nums">
                     {formatNumber(item.value)}
                   </p>
-                  <p className="text-[10px] text-slate-400">{item.unit}</p>
+                  <p className="text-[11px] text-slate-300">{item.unit}</p>
                 </div>
               ))}
             </div>
-            <p className="px-1 text-[10.5px] leading-relaxed text-slate-400">
+            <p className="px-1 text-[11px] leading-relaxed text-slate-300">
               {data?.source ? `Source: ${data.source}` : "Air quality data is shown only when available."}
               {data?.observed_at ? ` · observed ${data.observed_at.replace("T", " ")}` : ""}
               {category?.value !== null && category?.value !== undefined ? ` · ${category.label}` : ""}
@@ -199,7 +198,7 @@ export function Landing() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-glow-300">How it works</p>
               <h2 className="mt-2 font-display text-3xl font-semibold text-white sm:text-4xl">Four steps to a cleaner routine</h2>
             </div>
-            <p className="max-w-sm text-[12.5px] leading-relaxed text-slate-400">
+            <p className="max-w-sm text-[12.5px] leading-relaxed text-slate-300">
               Onboarding takes about three minutes. You can update any habit later from Settings, and every
               recommendation will re-ground itself in the new baseline.
             </p>
@@ -250,7 +249,7 @@ export function Landing() {
             </div>
           </div>
           <div className="surface p-6">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-slate-400">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-slate-300">
               <MapPin size={12} className="text-aurora-400" aria-hidden="true" />
               Designed for Indian cities
             </div>
@@ -264,7 +263,7 @@ export function Landing() {
                 <div key={row.label} className="flex items-start justify-between gap-4 rounded-xl border border-hairline bg-ink-900/50 px-4 py-3">
                   <div>
                     <p className="text-[13px] font-medium text-slate-100">{row.label}</p>
-                    <p className="mt-0.5 text-[11.5px] text-slate-400">{row.note}</p>
+                    <p className="mt-0.5 text-[11.5px] text-slate-300">{row.note}</p>
                   </div>
                   <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-aurora-400" aria-hidden="true" />
                 </div>
@@ -275,7 +274,7 @@ export function Landing() {
                 &ldquo;The air is not just a number. It is what your commute, your kitchen and your city do to your
                 lungs — and what you can still change today.&rdquo;
               </p>
-              <p className="mt-2 text-[11px] text-slate-400">AirAware AI product principle</p>
+              <p className="mt-2 text-[11px] text-slate-300">AirAware AI product principle</p>
             </div>
           </div>
         </div>
@@ -299,8 +298,8 @@ export function Landing() {
                 Sign in
               </Button>
             </div>
-            <p className="relative mt-4 text-[11px] text-slate-400">
-              Already exploring? <Link to="/air-quality" className="text-aurora-300 hover:underline">Preview live air quality</Link>
+            <p className="relative mt-4 text-[12px] text-slate-300">
+              Want the details? <a href="#live-preview" className="text-aurora-300 hover:underline">See the public live preview above</a>
             </p>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { Button } from "../common/Button";
 
 function BootSplash() {
   return (
-    <main id="main-content" tabIndex={-1} className="app-bg flex min-h-screen flex-col items-center justify-center gap-3 outline-none">
+    <main id="main-content" tabIndex={-1} className="app-bg flex min-h-screen flex-col items-center justify-center gap-3">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-ink-800 focus:px-4 focus:py-2 focus:text-white"
@@ -39,7 +39,7 @@ export function PublicOnlyRoute() {
 
 export function NotFound() {
   return (
-    <main id="main-content" tabIndex={-1} className="app-bg flex min-h-screen flex-col items-center justify-center px-6 text-center outline-none">
+    <main id="main-content" tabIndex={-1} className="app-bg flex min-h-screen flex-col items-center justify-center px-6 text-center">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-ink-800 focus:px-4 focus:py-2 focus:text-white"

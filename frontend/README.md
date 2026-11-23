@@ -19,7 +19,7 @@ npm run build
 - `src/components/` — shared UI, charts, map, and accessibility helpers
 - `src/context/` — auth, data, and live-region state
 - `src/hooks/` — air quality and reusable browser hooks
-- `src/services/` — typed API clients
+- `src/services/` — API clients with JSDoc types
 - `src/lib/` — AQI scales, formatting, and URL safety helpers
 - `src/test/` and `src/__tests__/` — Vitest setup, module mocks, and accessibility tests
 
@@ -28,3 +28,4 @@ npm run build
 - The UI labels modelled grid readings and computed Indian AQI as estimates, never as street-level measurements.
 - Daily-plan text and assistant replies come from Gemini; when it is unavailable the API returns 503 rather than invented content.
 - External links are restricted to absolute `http(s)` URLs before rendering.
+- Map tiles are loaded through the backend `/api/map/tiles` proxy; no CARTO or other browser-exposed map key is used.
