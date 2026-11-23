@@ -47,8 +47,6 @@ See `docs/data-and-limitations.md`, `docs/problem-alignment.md` and `docs/submis
 - **Deployed app:** https://airaware-ai-sigma.vercel.app/
 - **Demo video:** https://drive.google.com/file/d/1UBJfqxK98T6qnUIR-wvZQTPEAfkKPj5O/view?usp=drivesdk
 - **LinkedIn post:** https://www.linkedin.com/posts/themukeshdev_buildwithai-promptwarsvirtual-challenge6-ugcPost-7530514418300858368-WeM3/
-- **Recorded AI evaluation score:** 95.51/100 (previous attempt)
-- **Current local projection after these fixes:** 100/100 (official re-run pending)
 
 ## Evaluator walkthrough
 
